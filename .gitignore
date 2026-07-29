@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.superpowers/
+__pycache__/
+*.py[cod]
+
+# Generated scan outputs may contain endpoint or exposure data.
+asm-findings-*.csv
+asm-findings-*.jsonl
