@@ -555,7 +555,18 @@ def write_findings(findings: Iterable[dict[str, Any]], output: TextIO) -> int:
     return count
 
 
-CSV_FIELDNAMES = ["endpoint_name", "端口号", "cloudPlatform", "http状态码", "http response", "LLM意见", "risk_level"]
+WIZ_ENDPOINT_URL_PREFIX = "https://app.wiz.io/p/secengcnaccounts/inventory/application-endpoints#%7E%28entity%7E%28%7E%27"
+WIZ_ENDPOINT_URL_SUFFIX = "*2cENDPOINT%29%29"
+CSV_FIELDNAMES = [
+    "endpoint_name",
+    "Wiz链接",
+    "端口号",
+    "cloudPlatform",
+    "http状态码",
+    "http response",
+    "LLM意见",
+    "risk_level",
+]
 CSV_FLUSH_INTERVAL = 300
 
 
@@ -586,12 +597,20 @@ def write_findings_csv(findings: Iterable[dict[str, Any]], output: TextIO) -> in
     return writer.count
 
 
+def wiz_endpoint_url(endpoint_id: Any) -> str:
+    endpoint_id_text = str(endpoint_id or "").strip()
+    if not endpoint_id_text:
+        return ""
+    return f"{WIZ_ENDPOINT_URL_PREFIX}{endpoint_id_text}{WIZ_ENDPOINT_URL_SUFFIX}"
+
+
 def csv_row_for_finding(finding_item: dict[str, Any]) -> dict[str, Any]:
     details = finding_item.get("details")
     if not isinstance(details, dict):
         details = {}
     return {
         "endpoint_name": finding_item.get("endpoint_name") or "",
+        "Wiz链接": wiz_endpoint_url(finding_item.get("endpoint_id")),
         "端口号": finding_item.get("port") or "",
         "cloudPlatform": finding_item.get("cloudPlatform") or "",
         "http状态码": details.get("http_status") or details.get("status") or "",

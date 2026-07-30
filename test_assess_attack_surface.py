@@ -763,6 +763,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         output = StringIO()
         findings = [
             {
+                "endpoint_id": "2e7dca40-b6e1-5e11-aa7e-3303642a6ef0",
                 "endpoint_name": "https://app.example.com:443",
                 "port": 443,
                 "cloudPlatform": "AWS",
@@ -799,6 +800,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             rows[0],
             {
                 "endpoint_name": "https://app.example.com:443",
+                "Wiz链接": "https://app.wiz.io/p/secengcnaccounts/inventory/application-endpoints#%7E%28entity%7E%28%7E%272e7dca40-b6e1-5e11-aa7e-3303642a6ef0*2cENDPOINT%29%29",
                 "端口号": "443",
                 "cloudPlatform": "AWS",
                 "http状态码": "200",
@@ -809,6 +811,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(rows[1]["http response"], "Sign in; content_type=text/html")
         self.assertEqual(rows[1]["LLM意见"], "HTTPS endpoint appears to be a login page rather than direct sensitive content.")
+        self.assertEqual(rows[1]["Wiz链接"], "")
 
     def test_write_findings_csv_flushes_every_300_rows(self):
         class FlushTrackingStringIO(StringIO):
@@ -992,12 +995,18 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]
+            with open(csv_path, encoding="utf-8", newline="") as csv_file:
+                csv_rows = list(csv.DictReader(csv_file))
 
         self.assertEqual(exit_code, 0)
         load_config.assert_called_once_with()
         fetch_token.assert_called_once_with(config)
         iter_endpoints.assert_called_once_with(config, "token-123")
         self.assertEqual(json_rows[0]["endpoint_name"], "https://wiz.example.com:443")
+        self.assertEqual(
+            csv_rows[0]["Wiz链接"],
+            "https://app.wiz.io/p/secengcnaccounts/inventory/application-endpoints#%7E%28entity%7E%28%7E%27endpoint-1*2cENDPOINT%29%29",
+        )
 
     def test_main_uses_explicit_input_without_fetching_wiz(self):
         with tempfile.TemporaryDirectory() as temp_dir:
