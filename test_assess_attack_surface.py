@@ -870,6 +870,31 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertFalse(args.insecure_tls)
         self.assertFalse(args.enable_llm)
 
+    def test_default_output_paths_use_timestamp_prefix(self):
+        now = asm.datetime.datetime(2026, 8, 3, 14, 29, 9)
+
+        json_path, csv_path = asm.default_output_paths(now)
+
+        self.assertEqual(json_path, "20260803-142909-asm-findings.jsonl")
+        self.assertEqual(csv_path, "20260803-142909-asm-findings.csv")
+
+    def test_resolve_output_paths_creates_jsonl_and_csv_when_output_omitted(self):
+        args = asm.build_arg_parser().parse_args([])
+        now = asm.datetime.datetime(2026, 8, 3, 14, 29, 9)
+
+        json_path, csv_path = asm.resolve_output_paths(args, now)
+
+        self.assertEqual(json_path, "20260803-142909-asm-findings.jsonl")
+        self.assertEqual(csv_path, "20260803-142909-asm-findings.csv")
+
+    def test_resolve_output_paths_preserves_explicit_output_behavior(self):
+        args = asm.build_arg_parser().parse_args(["--output", "-", "--csv-output", "custom.csv"])
+
+        json_path, csv_path = asm.resolve_output_paths(args, asm.datetime.datetime(2026, 8, 3, 14, 29, 9))
+
+        self.assertEqual(json_path, "-")
+        self.assertEqual(csv_path, "custom.csv")
+
     def test_main_writes_json_and_csv_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, "input.jsonl")
@@ -913,6 +938,57 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(len(csv_rows), 1)
         self.assertEqual(csv_rows[0]["endpoint_name"], "https://app.example.com:443")
         self.assertEqual(csv_rows[0]["http状态码"], "200")
+
+    def test_main_without_output_creates_timestamped_jsonl_and_csv_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, "input.jsonl")
+            with open(input_path, "w", encoding="utf-8") as input_file:
+                input_file.write(
+                    json.dumps(
+                        {
+                            "id": "endpoint-1",
+                            "name": "https://app.example.com:443",
+                            "host": "app.example.com",
+                            "port": 443,
+                            "protocols": ["HTTPS"],
+                            "cloudPlatform": "AWS",
+                        }
+                    )
+                    + "\n"
+                )
+
+            def fetcher(request, timeout, context=None):
+                return asm.HttpResponse(
+                    url=request.full_url,
+                    status=200,
+                    headers={"Content-Type": "text/html"},
+                    body=b"<html><title>Welcome</title><p>Public page</p></html>",
+                )
+
+            real_datetime = asm.datetime.datetime
+
+            class FixedDateTime(real_datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return cls(2026, 8, 3, 14, 29, 9, tzinfo=tz)
+
+            current_dir = os.getcwd()
+            with (
+                patch.object(asm, "fetch_url", fetcher),
+                patch.object(asm.datetime, "datetime", FixedDateTime),
+            ):
+                os.chdir(temp_dir)
+                try:
+                    exit_code = asm.main(["--input", input_path, "--disable-llm"])
+                finally:
+                    os.chdir(current_dir)
+
+            json_path = os.path.join(temp_dir, "20260803-142909-asm-findings.jsonl")
+            csv_path = os.path.join(temp_dir, "20260803-142909-asm-findings.csv")
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(os.path.exists(json_path))
+            self.assertTrue(os.path.exists(csv_path))
 
     def test_main_logs_each_processed_endpoint(self):
         with tempfile.TemporaryDirectory() as temp_dir:

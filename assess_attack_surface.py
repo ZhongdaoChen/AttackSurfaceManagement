@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import html
 import json
 import os
@@ -822,7 +823,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--input",
         help="Input Wiz endpoint JSONL file. If omitted, endpoints are fetched from Wiz before scanning.",
     )
-    parser.add_argument("--output", default="-", help="Output findings JSONL file, or '-' for stdout.")
+    parser.add_argument(
+        "--output",
+        help="Output findings JSONL file. If omitted, timestamped JSONL and CSV files are created; use '-' for stdout.",
+    )
     parser.add_argument("--limit", type=int, default=0, help="Maximum endpoints to assess; 0 means no limit.")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="HTTP timeout in seconds.")
     parser.set_defaults(insecure_tls=True, enable_llm=True)
@@ -854,6 +858,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def default_output_paths(now: datetime.datetime) -> tuple[str, str]:
+    prefix = now.strftime("%Y%m%d-%H%M%S-asm-findings")
+    return f"{prefix}.jsonl", f"{prefix}.csv"
+
+
+def resolve_output_paths(args: argparse.Namespace, now: datetime.datetime | None = None) -> tuple[str, str | None]:
+    if args.output is None:
+        return default_output_paths(now or datetime.datetime.now())
+    return args.output, args.csv_output
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     llm_client = OpenAICompatibleClient(timeout_seconds=args.timeout) if args.enable_llm else None
@@ -875,8 +890,9 @@ def main(argv: list[str] | None = None) -> int:
         yield from wiz_auth_poc.iter_application_endpoints(config, access_token)
 
     count = 0
-    output = sys.stdout if args.output == "-" else open(args.output, "w", encoding="utf-8")
-    csv_output = open(args.csv_output, "w", encoding="utf-8", newline="") if args.csv_output else None
+    output_path, csv_output_path = resolve_output_paths(args)
+    output = sys.stdout if output_path == "-" else open(output_path, "w", encoding="utf-8")
+    csv_output = open(csv_output_path, "w", encoding="utf-8", newline="") if csv_output_path else None
     csv_writer = CsvFindingWriter(csv_output) if csv_output is not None else None
     try:
         for index, endpoint in enumerate(iter_input_endpoints(), start=1):

@@ -87,10 +87,10 @@ python3 assess_attack_surface.py \
 ### 4. 全量扫描
 
 ```bash
-python3 assess_attack_surface.py \
-  --output asm-findings-full-latest.jsonl \
-  --csv-output asm-findings-full-latest.csv
+python3 assess_attack_surface.py
 ```
+
+未指定 `--output` 时，会自动生成 `YYYYMMDD-HHMMSS-asm-findings.jsonl` 和 `YYYYMMDD-HHMMSS-asm-findings.csv`。
 
 ### 5. 使用已导出的 input 重新扫描
 
@@ -105,7 +105,7 @@ python3 assess_attack_surface.py \
 
 ### JSONL
 
-`--output` 生成 JSON Lines，每行一个 finding。常见字段包括：
+`--output` 生成 JSON Lines，每行一个 finding。未指定 `--output` 时会自动生成时间戳文件名。常见字段包括：
 
 - `endpoint_id`
 - `endpoint_name`
@@ -121,7 +121,7 @@ python3 assess_attack_surface.py \
 
 ### CSV
 
-`--csv-output` 生成适合人工 review 的 CSV，当前列包括：
+`--csv-output` 生成适合人工 review 的 CSV。未指定 `--output` 时会自动生成同前缀 CSV；显式指定 `--output` 时，只有同时传 `--csv-output` 才生成 CSV。当前列包括：
 
 - `endpoint_name`
 - `Wiz链接`
@@ -183,9 +183,7 @@ python3 assess_attack_surface.py \
   --limit 100
 
 # Full scan
-python3 assess_attack_surface.py \
-  --output asm-findings-full-latest.jsonl \
-  --csv-output asm-findings-full-latest.csv
+python3 assess_attack_surface.py
 ```
 
 Required Wiz environment variables are `WIZ_CLIENT_ID` and `WIZ_CLIENT_SECRET`. LLM review is enabled by default and requires one of `LLM_API_KEY`, `DASHSCOPE_API_KEY`, or `QWEN_API_KEY`; use `--disable-llm` to turn it off.
