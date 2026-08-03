@@ -1,1 +1,1 @@
-python3 assess_attack_surface.py --output asm-findings-full-latest.jsonl --csv-output asm-findings-full-latest.csv --timeout 30 --insecure-tls --enable-llm
+python3 assess_attack_surface.py --output asm-findings-full-latest.jsonl --csv-output asm-findings-full-latest.csv

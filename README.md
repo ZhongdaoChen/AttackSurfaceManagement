@@ -55,9 +55,11 @@ This repository contains a Python-based scanner that exports Wiz Application End
 
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `LLM_API_KEY` / `DASHSCOPE_API_KEY` / `QWEN_API_KEY` | 启用 `--enable-llm` 时必填 | 无 | OpenAI-compatible API key |
+| `LLM_API_KEY` / `DASHSCOPE_API_KEY` / `QWEN_API_KEY` | 默认必填；使用 `--disable-llm` 时不需要 | 无 | OpenAI-compatible API key |
 | `LLM_BASE_URL` | 否 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI-compatible base URL |
 | `LLM_MODEL` | 否 | `qwen-plus` | 模型名称 |
+
+`--timeout` 默认是 `30`，`--insecure-tls` 和 `--enable-llm` 默认开启。需要关闭时可使用 `--secure-tls` 或 `--disable-llm`。
 
 ## 常用命令
 
@@ -79,9 +81,6 @@ python3 wiz_auth_poc.py list-application-endpoints > wiz-application-endpoints.j
 python3 assess_attack_surface.py \
   --output asm-findings-limit100.jsonl \
   --csv-output asm-findings-limit100.csv \
-  --timeout 30 \
-  --insecure-tls \
-  --enable-llm \
   --limit 100
 ```
 
@@ -90,10 +89,7 @@ python3 assess_attack_surface.py \
 ```bash
 python3 assess_attack_surface.py \
   --output asm-findings-full-latest.jsonl \
-  --csv-output asm-findings-full-latest.csv \
-  --timeout 30 \
-  --insecure-tls \
-  --enable-llm
+  --csv-output asm-findings-full-latest.csv
 ```
 
 ### 5. 使用已导出的 input 重新扫描
@@ -102,10 +98,7 @@ python3 assess_attack_surface.py \
 python3 assess_attack_surface.py \
   --input wiz-application-endpoints.jsonl \
   --output asm-findings-full-latest.jsonl \
-  --csv-output asm-findings-full-latest.csv \
-  --timeout 30 \
-  --insecure-tls \
-  --enable-llm
+  --csv-output asm-findings-full-latest.csv
 ```
 
 ## 输出说明
@@ -143,8 +136,8 @@ python3 assess_attack_surface.py \
 
 ### risk_level
 
-- `high`：发现疑似敏感内容暴露，例如目录列表、secret-like value、错误栈、备份文件线索。
-- `medium`：需要人工 review，例如非标准开放端口、非登录页且无明确敏感信号的 HTTPS 页面、带信息泄露线索的 404。
+- `high`：发现疑似敏感内容暴露，例如目录列表、secret-like value、错误栈、备份文件线索；或发现非标准开放端口。
+- `medium`：需要人工 review，例如非登录页且无明确敏感信号的 HTTPS 页面、带信息泄露线索的 404。
 - `low`：当前根路径未观察到直接敏感暴露，例如登录页、干净 404、connection reset。
 - `unknown`：检查器或网络异常导致无法判断。
 
@@ -164,6 +157,7 @@ filterBy: {"project": [WIZ_PROJECT_ID]}
 - 不要提交生成的 findings 文件；`asm-findings-*.jsonl` 和 `asm-findings-*.csv` 已在 `.gitignore` 中忽略。
 - Findings 可能包含 endpoint、响应摘要、LLM 判断和敏感片段，分享前需要脱敏。
 - `--insecure-tls` 仅用于内容 triage，不代表生产环境可以忽略证书问题。
+- `--timeout` 默认是 `30`，`--insecure-tls` 和 `--enable-llm` 默认开启。需要关闭时可使用 `--secure-tls` 或 `--disable-llm`。
 
 ## 测试
 
@@ -186,20 +180,14 @@ python3 wiz_auth_poc.py list-application-endpoints > wiz-application-endpoints.j
 python3 assess_attack_surface.py \
   --output asm-findings-limit100.jsonl \
   --csv-output asm-findings-limit100.csv \
-  --timeout 30 \
-  --insecure-tls \
-  --enable-llm \
   --limit 100
 
 # Full scan
 python3 assess_attack_surface.py \
   --output asm-findings-full-latest.jsonl \
-  --csv-output asm-findings-full-latest.csv \
-  --timeout 30 \
-  --insecure-tls \
-  --enable-llm
+  --csv-output asm-findings-full-latest.csv
 ```
 
-Required Wiz environment variables are `WIZ_CLIENT_ID` and `WIZ_CLIENT_SECRET`. Optional LLM mode requires one of `LLM_API_KEY`, `DASHSCOPE_API_KEY`, or `QWEN_API_KEY`.
+Required Wiz environment variables are `WIZ_CLIENT_ID` and `WIZ_CLIENT_SECRET`. LLM review is enabled by default and requires one of `LLM_API_KEY`, `DASHSCOPE_API_KEY`, or `QWEN_API_KEY`; use `--disable-llm` to turn it off.
 
 Generated findings are ignored by git because they may contain endpoint or exposure data. Do not commit `.env`, credentials, raw scan outputs, or sensitive response snippets.

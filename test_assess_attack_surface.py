@@ -29,7 +29,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
-        self.assertEqual(findings[0]["risk_level"], "medium")
+        self.assertEqual(findings[0]["risk_level"], "high")
         self.assertIn("8080", findings[0]["evidence"])
 
     def test_standard_ports_do_not_return_non_standard_port_finding(self):
@@ -60,7 +60,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         def fetcher(request, timeout, context=None):
             return responses[request.full_url]
 
-        findings = asm.HttpRedirectChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+        findings = asm.HttpRedirectChecker().check(endpoint, asm.CheckContext(fetcher=fetcher, llm_enabled=False))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
@@ -89,7 +89,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         def fetcher(request, timeout, context=None):
             return responses[request.full_url]
 
-        findings = asm.HttpRedirectChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+        findings = asm.HttpRedirectChecker().check(endpoint, asm.CheckContext(fetcher=fetcher, llm_enabled=False))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "https_login_page")
@@ -358,7 +358,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 body=b"<html><title>Sign in</title><form><input type='password'></form></html>",
             )
 
-        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher, llm_enabled=False))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "https_login_page")
@@ -376,7 +376,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 body=b"<html><title>Index of /</title><h1>Index of /</h1><a href='backup.zip'>backup.zip</a></html>",
             )
 
-        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher, llm_enabled=False))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
@@ -403,7 +403,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         def fetcher(request, timeout, context=None):
             return responses[request.full_url]
 
-        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher, llm_enabled=False))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
@@ -425,7 +425,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         findings = asm.content_findings_for_response(
             endpoint,
             response,
-            asm.CheckContext(),
+            asm.CheckContext(llm_enabled=False),
             detail_overrides={"redirect_chain": [{"status": 301, "location": "https://app.example.com/final"}]},
         )
 
@@ -857,6 +857,19 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertIn("If no sensitive content is present, evidence should be a concise Chinese summary", prompt)
         self.assertIn("If sensitive content is present, evidence should include the relevant HTTP/HTML response snippet", prompt)
 
+    def test_arg_parser_defaults_to_full_scan_operational_settings(self):
+        args = asm.build_arg_parser().parse_args([])
+
+        self.assertEqual(args.timeout, 30)
+        self.assertTrue(args.insecure_tls)
+        self.assertTrue(args.enable_llm)
+
+    def test_arg_parser_allows_disabling_insecure_tls_and_llm(self):
+        args = asm.build_arg_parser().parse_args(["--secure-tls", "--disable-llm"])
+
+        self.assertFalse(args.insecure_tls)
+        self.assertFalse(args.enable_llm)
+
     def test_main_writes_json_and_csv_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, "input.jsonl")
@@ -886,7 +899,9 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 )
 
             with patch.object(asm, "fetch_url", fetcher):
-                exit_code = asm.main(["--input", input_path, "--output", json_path, "--csv-output", csv_path])
+                exit_code = asm.main(
+                    ["--input", input_path, "--output", json_path, "--csv-output", csv_path, "--disable-llm"]
+                )
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]
@@ -938,7 +953,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(sys, "stderr", status_output),
             ):
-                exit_code = asm.main(["--input", input_path, "--output", json_path])
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm"])
 
         self.assertEqual(exit_code, 0)
         status_lines = status_output.getvalue().splitlines()
@@ -991,7 +1006,9 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                     ),
                 ) as iter_endpoints,
             ):
-                exit_code = asm.main(["--output", json_path, "--csv-output", csv_path, "--limit", "1"])
+                exit_code = asm.main(
+                    ["--output", json_path, "--csv-output", csv_path, "--limit", "1", "--disable-llm"]
+                )
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]
@@ -1039,7 +1056,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(asm.wiz_auth_poc, "load_config") as load_config,
             ):
-                exit_code = asm.main(["--input", input_path, "--output", json_path])
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm"])
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]

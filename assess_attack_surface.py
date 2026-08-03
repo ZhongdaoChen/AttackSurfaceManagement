@@ -21,7 +21,7 @@ from typing import Any, Callable, Iterable, Iterator, Protocol, TextIO
 import wiz_auth_poc
 
 
-DEFAULT_TIMEOUT_SECONDS = 10
+DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_BODY_LIMIT_BYTES = 64 * 1024
 DEFAULT_LLM_BODY_LIMIT_CHARS = 12000
 DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -55,8 +55,8 @@ class CheckContext:
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     body_limit_bytes: int = DEFAULT_BODY_LIMIT_BYTES
     ca_bundle: str | None = None
-    insecure_tls: bool = False
-    llm_enabled: bool = False
+    insecure_tls: bool = True
+    llm_enabled: bool = True
     llm_client: LlmClient | None = None
     response_summaries: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -236,7 +236,7 @@ class NonStandardPortChecker:
             finding(
                 endpoint,
                 self.check_id,
-                "medium",
+                "high",
                 f"Open non-standard internet-facing port {port}.",
                 "Confirm business need; close the port or restrict it with an allowlist, VPN, WAF, or internal load balancer.",
                 details={"port": port, "protocols": endpoint.get("protocols")},
@@ -825,12 +825,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", default="-", help="Output findings JSONL file, or '-' for stdout.")
     parser.add_argument("--limit", type=int, default=0, help="Maximum endpoints to assess; 0 means no limit.")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="HTTP timeout in seconds.")
+    parser.set_defaults(insecure_tls=True, enable_llm=True)
     parser.add_argument(
         "--insecure-tls",
+        dest="insecure_tls",
         action="store_true",
-        help="Disable TLS certificate verification for response-content triage.",
+        help="Disable TLS certificate verification for response-content triage. Enabled by default.",
     )
-    parser.add_argument("--enable-llm", action="store_true", help="Enable OpenAI-compatible LLM content judgment.")
+    parser.add_argument(
+        "--secure-tls",
+        dest="insecure_tls",
+        action="store_false",
+        help="Verify TLS certificates instead of using insecure content triage.",
+    )
+    parser.add_argument(
+        "--enable-llm",
+        dest="enable_llm",
+        action="store_true",
+        help="Enable OpenAI-compatible LLM content judgment. Enabled by default.",
+    )
+    parser.add_argument(
+        "--disable-llm",
+        dest="enable_llm",
+        action="store_false",
+        help="Disable OpenAI-compatible LLM content judgment.",
+    )
     parser.add_argument("--csv-output", help="Output findings CSV file in addition to JSONL output.")
     return parser
 
