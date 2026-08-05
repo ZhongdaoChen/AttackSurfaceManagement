@@ -143,13 +143,13 @@ python3 assess_attack_surface.py \
 
 ## 当前检查范围说明
 
-脚本当前从 Wiz 拉取的是指定 project 下的 `applicationEndpoints`：
+脚本默认从 Wiz 拉取指定 project 下 `exposureLevel=HIGH` 的 `applicationEndpoints`：
 
 ```python
-filterBy: {"project": [WIZ_PROJECT_ID]}
+filterBy: {"project": [WIZ_PROJECT_ID], "exposureLevel": ["HIGH"]}
 ```
 
-代码没有在 Wiz 查询阶段显式过滤“只包含公网可访问 endpoint”。如果需要严格限制为公网可访问，需要后续根据 Wiz 支持的字段或本地字段（例如 `exposureLevel`、`portStatus`）增加过滤逻辑。
+如果使用 `--input` 扫描已导出的 JSONL，则会扫描输入文件中的所有 endpoint，不再额外按 `exposureLevel` 过滤。
 
 ## 安全注意事项
 

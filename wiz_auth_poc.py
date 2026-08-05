@@ -212,7 +212,11 @@ def iter_application_endpoints(
             config,
             access_token,
             APPLICATION_ENDPOINTS_QUERY,
-            {"first": page_size, "after": after, "filterBy": {"project": [config.project_id]}},
+            {
+                "first": page_size,
+                "after": after,
+                "filterBy": {"project": [config.project_id], "exposureLevel": ["HIGH"]},
+            },
             "Application endpoints query",
         )
         connection = data.get("applicationEndpoints")

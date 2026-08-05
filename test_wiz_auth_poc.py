@@ -286,7 +286,10 @@ class WizAuthPoCTests(unittest.TestCase):
             {
                 "first": 1,
                 "after": None,
-                "filterBy": {"project": ["242f91dd-f1c6-573f-b8b4-678df5581477"]},
+                "filterBy": {
+                    "project": ["242f91dd-f1c6-573f-b8b4-678df5581477"],
+                    "exposureLevel": ["HIGH"],
+                },
             },
         )
         self.assertEqual(
@@ -294,7 +297,10 @@ class WizAuthPoCTests(unittest.TestCase):
             {
                 "first": 1,
                 "after": "cursor-1",
-                "filterBy": {"project": ["242f91dd-f1c6-573f-b8b4-678df5581477"]},
+                "filterBy": {
+                    "project": ["242f91dd-f1c6-573f-b8b4-678df5581477"],
+                    "exposureLevel": ["HIGH"],
+                },
             },
         )
         self.assertEqual(calls[0]["context"], "Application endpoints query")
@@ -329,7 +335,7 @@ class WizAuthPoCTests(unittest.TestCase):
             {
                 "first": 10,
                 "after": None,
-                "filterBy": {"project": ["project-123"]},
+                "filterBy": {"project": ["project-123"], "exposureLevel": ["HIGH"]},
             },
         )
 
