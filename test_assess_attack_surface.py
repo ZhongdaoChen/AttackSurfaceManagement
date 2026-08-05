@@ -344,7 +344,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "http_without_https_redirect")
-        self.assertEqual(findings[0]["risk_level"], "medium")
+        self.assertEqual(findings[0]["risk_level"], "low")
         self.assertIn("HTTP 200", findings[0]["evidence"])
 
     def test_https_content_checker_identifies_login_page_as_low_risk(self):
@@ -450,8 +450,33 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "https_tls_certificate_error")
-        self.assertEqual(findings[0]["risk_level"], "medium")
+        self.assertEqual(findings[0]["risk_level"], "low")
         self.assertIn("Hostname mismatch", findings[0]["evidence"])
+
+    def test_https_content_checker_reports_connection_reset_as_low_risk(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 443, "protocols": ["HTTPS"]}
+
+        def fetcher(request, timeout, context=None):
+            raise ConnectionResetError("Connection reset by peer")
+
+        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_connection_reset")
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertIn("Connection reset by peer", findings[0]["evidence"])
+
+    def test_https_content_checker_reports_urlerror_connection_reset_as_low_risk(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 443, "protocols": ["HTTPS"]}
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError(ConnectionResetError("Connection reset by peer"))
+
+        findings = asm.HttpsContentChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_connection_reset")
+        self.assertEqual(findings[0]["risk_level"], "low")
 
     def test_https_content_checker_marks_clean_404_as_low_risk(self):
         endpoint = {

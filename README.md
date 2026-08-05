@@ -138,7 +138,7 @@ python3 assess_attack_surface.py \
 
 - `high`：发现疑似敏感内容暴露，例如目录列表、secret-like value、错误栈、备份文件线索；或发现非标准开放端口。
 - `medium`：需要人工 review，例如非登录页且无明确敏感信号的 HTTPS 页面、带信息泄露线索的 404。
-- `low`：当前根路径未观察到直接敏感暴露，例如登录页、干净 404、connection reset。
+- `low`：当前根路径未观察到直接敏感暴露，或属于低优先级网络/配置问题，例如登录页、干净 404、connection reset、HTTPS 证书校验失败、HTTP 80 未强制跳转 HTTPS。
 - `unknown`：检查器或网络异常导致无法判断。
 
 ## 当前检查范围说明

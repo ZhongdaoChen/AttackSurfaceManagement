@@ -226,6 +226,15 @@ def redirect_fetch_error_reason(exc: BaseException) -> str:
     return str(exc)
 
 
+def is_connection_reset_error(exc: BaseException) -> bool:
+    if isinstance(exc, ConnectionResetError):
+        return True
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, ConnectionResetError):
+        return True
+    return "connection reset by peer" in str(exc).lower()
+
+
 class NonStandardPortChecker:
     check_id = "non_standard_open_port"
 
@@ -261,7 +270,7 @@ class HttpRedirectChecker:
             finding(
                 endpoint,
                 "http_without_https_redirect",
-                "medium",
+                "low",
                 f"HTTP 80 returned HTTP {response.status} without a forced HTTPS redirect.",
                 "Force HTTP to HTTPS or close port 80 if it is not required.",
                 details={"status": response.status, "location": location, "title": extract_title(response.body)},
@@ -390,16 +399,28 @@ class HttpsContentChecker:
             return []
         try:
             response = fetch_endpoint(endpoint, "https", context)
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, ConnectionResetError) as exc:
             if is_tls_certificate_error(exc):
                 return [
                     finding(
                         endpoint,
                         "https_tls_certificate_error",
-                        "medium",
+                        "low",
                         f"HTTPS certificate validation failed: {exc.reason}",
                         "Fix certificate chain/hostname mismatch. Use --insecure-tls only for follow-up content triage, not as a control.",
                         details={"error": str(exc.reason)},
+                    )
+                ]
+            if is_connection_reset_error(exc):
+                reason = redirect_fetch_error_reason(exc)
+                return [
+                    finding(
+                        endpoint,
+                        "https_connection_reset",
+                        "low",
+                        f"HTTPS endpoint reset the connection: {reason}",
+                        "Retest later or confirm whether the service intentionally resets unauthenticated root-path requests.",
+                        details={"error": reason},
                     )
                 ]
             raise
