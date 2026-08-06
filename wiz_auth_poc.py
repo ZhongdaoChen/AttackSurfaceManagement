@@ -31,6 +31,12 @@ query ListApplicationEndpoints($first: Int!, $after: String, $filterBy: Applicat
       port
       protocols
       cloudPlatform
+      cloudAccount {
+        id
+        name
+        externalId
+        cloudProvider
+      }
       firstSeen
       updatedAt
       deletedAt

@@ -75,6 +75,28 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["subscription"], "197575089658")
 
+    def test_non_standard_open_port_for_cloud_account_fdp_is_low_risk(self):
+        endpoint = {
+            "id": "113122bd-8e70-588a-a7e1-60bffc255220",
+            "name": "140.179.96.192:9095",
+            "host": "140.179.96.192",
+            "port": 9095,
+            "protocols": ["OTHER"],
+            "portStatus": "OPEN",
+            "cloudAccount": {
+                "id": "d6df48ea-c6e5-54f5-808b-72b4c55b74b5",
+                "name": "FDP",
+                "externalId": "197575089658",
+                "cloudProvider": "AWS",
+            },
+        }
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "FDP")
+
     def test_http_80_redirect_to_https_sensitive_content_is_high_risk(self):
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 80, "protocols": ["HTTP"]}
         responses = {

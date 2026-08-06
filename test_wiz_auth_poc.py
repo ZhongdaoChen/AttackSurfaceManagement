@@ -326,6 +326,8 @@ class WizAuthPoCTests(unittest.TestCase):
             ],
         )
         self.assertIn("applicationEndpoints", calls[0]["query"])
+        self.assertIn("cloudAccount", calls[0]["query"])
+        self.assertIn("externalId", calls[0]["query"])
         self.assertEqual(
             calls[0]["variables"],
             {

@@ -249,6 +249,12 @@ def subscription_value(endpoint: dict[str, Any]) -> str:
         value = endpoint.get(field)
         if value is not None and str(value).strip():
             return str(value).strip()
+    cloud_account = endpoint.get("cloudAccount")
+    if isinstance(cloud_account, dict):
+        for field in ("name", "externalId", "id"):
+            value = cloud_account.get(field)
+            if value is not None and str(value).strip():
+                return str(value).strip()
     return ""
 
 
