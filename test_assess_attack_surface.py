@@ -1477,6 +1477,58 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "https://app.wiz.io/p/secengcnaccounts/inventory/application-endpoints#%7E%28entity%7E%28%7E%27endpoint-1*2cENDPOINT%29%29",
         )
 
+    def test_main_continues_when_cloud_account_tag_email_lookup_times_out(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = os.path.join(temp_dir, "findings.jsonl")
+            config = wiz_auth_poc.WizConfig(
+                client_id="client-id",
+                client_secret="client-secret",
+                api_url="https://api.example.com/graphql",
+                auth_url="https://auth.example.com/oauth/token",
+            )
+
+            def fetcher(request, timeout, context=None):
+                return asm.HttpResponse(
+                    url=request.full_url,
+                    status=200,
+                    headers={"Content-Type": "text/html"},
+                    body=b"<html><title>Fetched from Wiz</title></html>",
+                )
+
+            status_output = StringIO()
+            with (
+                patch.object(asm, "fetch_url", fetcher),
+                patch.object(asm.wiz_auth_poc, "load_config", return_value=config),
+                patch.object(asm.wiz_auth_poc, "fetch_access_token", return_value="token-123"),
+                patch.object(
+                    asm.wiz_auth_poc,
+                    "iter_application_endpoints",
+                    return_value=iter(
+                        [
+                            {
+                                "id": "endpoint-1",
+                                "name": "https://wiz.example.com:443",
+                                "host": "wiz.example.com",
+                                "port": 443,
+                                "protocols": ["HTTPS"],
+                                "cloudPlatform": "AWS",
+                                "cloudAccount": {"id": "cloud-account-1", "name": "Account One"},
+                            }
+                        ]
+                    ),
+                ),
+                patch.object(asm.wiz_auth_poc, "fetch_cloud_account_tag_emails", side_effect=TimeoutError("read timed out")),
+                patch.object(sys, "stderr", status_output),
+            ):
+                exit_code = asm.main(["--output", json_path, "--limit", "1", "--disable-llm"])
+
+            with open(json_path, encoding="utf-8") as json_file:
+                json_rows = [json.loads(line) for line in json_file if line.strip()]
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json_rows[0]["tagEmails"], [])
+        self.assertIn("CloudAccount tag email lookup failed for cloud-account-1", status_output.getvalue())
+
     def test_main_uses_explicit_input_without_fetching_wiz(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, "input.jsonl")

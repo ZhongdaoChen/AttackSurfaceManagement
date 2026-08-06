@@ -1004,7 +1004,11 @@ def enrich_endpoint_with_tag_emails(
     if not account_id:
         return endpoint
     if account_id not in cache:
-        cache[account_id] = wiz_auth_poc.fetch_cloud_account_tag_emails(config, access_token, account_id)
+        try:
+            cache[account_id] = wiz_auth_poc.fetch_cloud_account_tag_emails(config, access_token, account_id)
+        except Exception as exc:  # noqa: BLE001 - tag email enrichment must not stop endpoint scanning.
+            print(f"CloudAccount tag email lookup failed for {account_id}: {exc}", file=sys.stderr)
+            cache[account_id] = []
     return {**endpoint, "tagEmails": cache[account_id]}
 
 
