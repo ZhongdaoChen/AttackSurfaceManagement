@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import urllib.error
 
 import upload_to_oss
 
@@ -115,6 +116,46 @@ class UploadToOssTests(unittest.TestCase):
         self.assertEqual(captured["data"], b"csv-content")
         self.assertEqual(captured["headers"]["X-oss-security-token"], "token")
         self.assertIn("OSS4-HMAC-SHA256", captured["headers"]["Authorization"])
+        self.assertIn("AdditionalHeaders=", captured["headers"]["Authorization"])
+        self.assertNotIn("SignedHeaders=", captured["headers"]["Authorization"])
+
+    def test_upload_file_reports_oss_error_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "result.csv"
+            file_path.write_bytes(b"csv-content")
+
+            def opener(request):
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    400,
+                    "Bad Request",
+                    {},
+                    fp=FakeErrorBody(b"<Error><Code>InvalidArgument</Code></Error>"),
+                )
+
+            with self.assertRaisesRegex(RuntimeError, "InvalidArgument"):
+                upload_to_oss.upload_file(
+                    file_path,
+                    endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+                    bucket="asm-bucket",
+                    credentials={
+                        "AccessKeyId": "STS.access",
+                        "AccessKeySecret": "secret",
+                        "SecurityToken": "token",
+                    },
+                    opener=opener,
+                )
+
+
+class FakeErrorBody:
+    def __init__(self, body):
+        self.body = body
+
+    def read(self, size=-1):
+        return self.body
+
+    def close(self):
+        pass
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 import urllib.parse
+import urllib.error
 import urllib.request
 
 
@@ -99,10 +100,14 @@ def upload_file(
         credentials=credentials,
     )
     open_request = opener or (lambda req: urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS))
-    with open_request(request) as response:
-        status = getattr(response, "status", 200)
-        if status < 200 or status >= 300:
-            raise RuntimeError(f"OSS upload failed for {file_path}: HTTP {status}: {response.read()[:500]!r}")
+    try:
+        with open_request(request) as response:
+            status = getattr(response, "status", 200)
+            if status < 200 or status >= 300:
+                raise RuntimeError(f"OSS upload failed for {file_path}: HTTP {status}: {response.read()[:500]!r}")
+    except urllib.error.HTTPError as exc:
+        body_preview = exc.read()[:1000].decode("utf-8", errors="replace")
+        raise RuntimeError(f"OSS upload failed for {file_path}: HTTP {exc.code}: {body_preview}") from exc
     return object_key
 
 
@@ -197,8 +202,8 @@ def oss_v4_authorization(
     return (
         "OSS4-HMAC-SHA256 "
         f"Credential={access_key_id}/{scope},"
-        f"Signature={signature},"
-        f"SignedHeaders={signed_headers}"
+        f"AdditionalHeaders={signed_headers},"
+        f"Signature={signature}"
     )
 
 
