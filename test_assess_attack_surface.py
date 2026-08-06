@@ -1005,7 +1005,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(rows[1]["LLM意见"], "HTTPS endpoint appears to be a login page rather than direct sensitive content.")
         self.assertEqual(rows[1]["Wiz链接"], "")
 
-    def test_write_findings_csv_flushes_every_300_rows(self):
+    def test_write_findings_csv_flushes_every_10_rows(self):
         class FlushTrackingStringIO(StringIO):
             def __init__(self):
                 super().__init__()
@@ -1027,13 +1027,13 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 "recommendation": "Keep authentication enforced.",
                 "details": {"status": 200},
             }
-            for index in range(301)
+            for index in range(11)
         ]
 
         count = asm.write_findings_csv(findings, output)
 
-        self.assertEqual(count, 301)
-        self.assertEqual(output.flush_line_counts, [301, 302])
+        self.assertEqual(count, 11)
+        self.assertEqual(output.flush_line_counts, [11, 12])
 
     def test_build_llm_prompt_requests_csv_friendly_evidence(self):
         prompt = asm.build_llm_prompt(

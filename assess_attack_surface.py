@@ -656,7 +656,7 @@ CSV_FIELDNAMES = [
     "LLM意见",
     "risk_level",
 ]
-CSV_FLUSH_INTERVAL = 300
+CSV_FLUSH_INTERVAL = 10
 
 
 class CsvFindingWriter:
