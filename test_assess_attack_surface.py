@@ -25,7 +25,10 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "exposureLevel": "MEDIUM",
         }
 
-        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
@@ -52,7 +55,10 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "subscription": "FDP",
         }
 
-        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
@@ -69,7 +75,10 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "accountId": "197575089658",
         }
 
-        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["risk_level"], "low")
@@ -91,11 +100,112 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             },
         }
 
-        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["subscription"], "FDP")
+
+    def test_non_standard_open_port_https_sensitive_content_is_high_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "name": "71.131.246.78:9200",
+            "host": "71.131.246.78",
+            "port": 9200,
+            "protocols": ["HTTPS"],
+            "portStatus": "OPEN",
+        }
+
+        def fetcher(request, timeout, context=None):
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "text/html"},
+                body=b"<html><title>Index of /</title><h1>Index of /</h1><a href='backup.zip'>backup.zip</a></html>",
+            )
+
+        findings = asm.NonStandardPortChecker().check(
+            endpoint,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertEqual(findings[0]["details"]["probe_scheme"], "https")
+        self.assertIn("directory_listing", findings[0]["details"]["signals"])
+
+    def test_non_standard_open_port_tries_http_after_https_failure(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 9200,
+            "protocols": ["HTTP"],
+            "portStatus": "OPEN",
+        }
+        fetched_urls = []
+
+        def fetcher(request, timeout, context=None):
+            fetched_urls.append(request.full_url)
+            if request.full_url.startswith("https://"):
+                raise asm.urllib.error.URLError("wrong version number")
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "text/html"},
+                body=b"<html><title>Login</title><input type='password'></html>",
+            )
+
+        findings = asm.NonStandardPortChecker().check(
+            endpoint,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(fetched_urls, ["https://app.example.com:9200/", "http://app.example.com:9200/"])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_login_page")
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["probe_scheme"], "http")
+
+    def test_non_standard_open_port_uses_llm_for_http_200_content(self):
+        llm_calls = []
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 9200,
+            "protocols": ["HTTPS"],
+            "portStatus": "OPEN",
+        }
+
+        def fetcher(request, timeout, context=None):
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "text/html"},
+                body=b"<html><title>Welcome</title><p>Public page</p></html>",
+            )
+
+        def llm_client(prompt):
+            llm_calls.append(prompt)
+            return {
+                "risk_level": "low",
+                "reason": "Public non-standard port landing page",
+                "evidence": "No sensitive content",
+                "recommendation": "Keep monitoring.",
+            }
+
+        findings = asm.assess_endpoint(
+            endpoint,
+            [asm.NonStandardPortChecker(), asm.LlmSensitiveContentChecker()],
+            asm.CheckContext(fetcher=fetcher, llm_enabled=True, llm_client=llm_client),
+        )
+
+        self.assertEqual([finding["check_id"] for finding in findings], ["llm_sensitive_content"])
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(len(llm_calls), 1)
 
     def test_http_80_redirect_to_https_sensitive_content_is_high_risk(self):
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 80, "protocols": ["HTTP"]}

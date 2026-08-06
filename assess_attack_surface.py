@@ -270,26 +270,55 @@ class NonStandardPortChecker:
         port = endpoint.get("port")
         if endpoint.get("portStatus") != "OPEN" or port in (80, 443):
             return []
-        subscription = subscription_value(endpoint)
-        low_risk_subscription = is_low_risk_subscription(endpoint)
-        return [
-            finding(
-                endpoint,
-                self.check_id,
-                "low" if low_risk_subscription else "high",
-                f"Open non-standard internet-facing port {port}.",
-                (
-                    "Confirm business need; subscription/account exception lowers priority, but keep the port documented and monitored."
-                    if low_risk_subscription
-                    else "Confirm business need; close the port or restrict it with an allowlist, VPN, WAF, or internal load balancer."
-                ),
-                details={
-                    "port": port,
-                    "protocols": endpoint.get("protocols"),
-                    **({"subscription": subscription} if subscription else {}),
-                },
-            )
-        ]
+        content_findings = non_standard_port_content_findings(endpoint, context)
+        if content_findings is not None:
+            return content_findings
+        return [fallback_non_standard_port_finding(endpoint, port)]
+
+
+def non_standard_port_content_findings(
+    endpoint: dict[str, Any],
+    context: CheckContext,
+) -> list[dict[str, Any]] | None:
+    probe_errors = []
+    for scheme in ("https", "http"):
+        try:
+            response = fetch_endpoint(endpoint, scheme, context)
+        except (urllib.error.URLError, ValueError, http.client.HTTPException, OSError, ConnectionResetError) as exc:
+            probe_errors.append({"scheme": scheme, "error": redirect_fetch_error_reason(exc)})
+            continue
+        return content_findings_for_response(
+            endpoint,
+            response,
+            context,
+            detail_overrides={
+                "non_standard_port": endpoint.get("port"),
+                "probe_scheme": scheme,
+                **({"probe_errors": probe_errors} if probe_errors else {}),
+            },
+        )
+    return None
+
+
+def fallback_non_standard_port_finding(endpoint: dict[str, Any], port: Any) -> dict[str, Any]:
+    subscription = subscription_value(endpoint)
+    low_risk_subscription = is_low_risk_subscription(endpoint)
+    return finding(
+        endpoint,
+        NonStandardPortChecker.check_id,
+        "low" if low_risk_subscription else "high",
+        f"Open non-standard internet-facing port {port}.",
+        (
+            "Confirm business need; subscription/account exception lowers priority, but keep the port documented and monitored."
+            if low_risk_subscription
+            else "Confirm business need; close the port or restrict it with an allowlist, VPN, WAF, or internal load balancer."
+        ),
+        details={
+            "port": port,
+            "protocols": endpoint.get("protocols"),
+            **({"subscription": subscription} if subscription else {}),
+        },
+    )
 
 
 class HttpRedirectChecker:

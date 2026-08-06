@@ -8,7 +8,7 @@ This repository contains a Python-based scanner that exports Wiz Application End
 
 - 从 Wiz GraphQL API 拉取 `applicationEndpoints`。
 - 支持把 Wiz 原始 endpoint 导出为 JSONL。
-- 对端口 80、443 和非标准开放端口生成 findings。
+- 对端口 80、443 和非标准开放端口生成 findings；非标准开放端口会先尝试 HTTPS/HTTP 内容探测，再按内容或 LLM 结果判断风险。
 - 对 301、302、303、307、308 重定向继续 follow，并分析最终目标。
 - 对 HTTPS 内容做登录页、404、目录列表、疑似 secret、错误栈等判断。
 - 可选启用 LLM 对 200 响应进行敏感数据暴露判断。
@@ -136,7 +136,7 @@ python3 assess_attack_surface.py \
 
 ### risk_level
 
-- `high`：发现疑似敏感内容暴露，例如目录列表、secret-like value、错误栈、备份文件线索；或发现非标准开放端口。
+- `high`：发现疑似敏感内容暴露，例如目录列表、secret-like value、错误栈、备份文件线索；或非标准开放端口内容不可判定且无低优先级订阅例外。
 - `medium`：需要人工 review，例如非登录页且无明确敏感信号的 HTTPS 页面、带信息泄露线索的 404。
 - `low`：当前根路径未观察到直接敏感暴露，或属于低优先级网络/配置问题，例如登录页、干净 404、connection reset、HTTPS 证书校验失败、HTTP 80 未强制跳转 HTTPS。
 - `unknown`：检查器或网络异常导致无法判断。
