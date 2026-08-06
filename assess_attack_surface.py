@@ -314,16 +314,16 @@ class NonStandardPortChecker:
         port = endpoint.get("port")
         if endpoint.get("portStatus") != "OPEN" or port in (80, 443):
             return []
-        content_findings = non_standard_port_content_findings(endpoint, context)
+        content_findings, probe_errors = non_standard_port_content_findings(endpoint, context)
         if content_findings is not None:
             return content_findings
-        return [fallback_non_standard_port_finding(endpoint, port)]
+        return [fallback_non_standard_port_finding(endpoint, port, probe_errors)]
 
 
 def non_standard_port_content_findings(
     endpoint: dict[str, Any],
     context: CheckContext,
-) -> list[dict[str, Any]] | None:
+) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]]]:
     probe_errors = []
     probe_context = CheckContext(
         fetcher=context.fetcher,
@@ -341,20 +341,32 @@ def non_standard_port_content_findings(
         except (urllib.error.URLError, ValueError, http.client.HTTPException, OSError, ConnectionResetError) as exc:
             probe_errors.append({"scheme": scheme, "error": redirect_fetch_error_reason(exc)})
             continue
-        return content_findings_for_response(
-            endpoint,
-            response,
-            context,
-            detail_overrides={
-                "non_standard_port": endpoint.get("port"),
-                "probe_scheme": scheme,
-                **({"probe_errors": probe_errors} if probe_errors else {}),
-            },
+        probe_result = http_probe_result(probe_errors, scheme, response.status)
+        return (
+            content_findings_for_response(
+                endpoint,
+                response,
+                context,
+                detail_overrides={
+                    "non_standard_port": endpoint.get("port"),
+                    "probe_scheme": scheme,
+                    "http_probe_result": probe_result,
+                    **({"probe_errors": probe_errors} if probe_errors else {}),
+                },
+            ),
+            probe_errors,
         )
-    return None
+    return None, probe_errors
 
 
-def fallback_non_standard_port_finding(endpoint: dict[str, Any], port: Any) -> dict[str, Any]:
+def http_probe_result(probe_errors: list[dict[str, Any]], success_scheme: str | None = None, status: int | None = None) -> str:
+    parts = [f"{error['scheme']} failed: {error['error']}" for error in probe_errors]
+    if success_scheme is not None and status is not None:
+        parts.append(f"{success_scheme} returned HTTP {status}")
+    return "; ".join(parts)
+
+
+def fallback_non_standard_port_finding(endpoint: dict[str, Any], port: Any, probe_errors: list[dict[str, Any]]) -> dict[str, Any]:
     subscription = subscription_value(endpoint)
     low_risk_subscription = is_low_risk_subscription(endpoint)
     sensitive_port = port in SENSITIVE_NON_STANDARD_PORTS
@@ -377,6 +389,8 @@ def fallback_non_standard_port_finding(endpoint: dict[str, Any], port: Any) -> d
             "port": port,
             "protocols": endpoint.get("protocols"),
             "sensitive_port": sensitive_port,
+            "http_probe_result": http_probe_result(probe_errors),
+            "probe_errors": probe_errors,
             **({"subscription": subscription} if subscription else {}),
         },
     )
@@ -777,6 +791,10 @@ def csv_row_for_finding(finding_item: dict[str, Any]) -> dict[str, Any]:
 def csv_http_response_summary(finding_item: dict[str, Any], details: dict[str, Any]) -> str:
     if finding_item.get("check_id") == "llm_sensitive_content":
         return str(finding_item.get("evidence") or details.get("reason") or "")
+
+    probe_result = details.get("http_probe_result")
+    if probe_result:
+        return str(probe_result)
 
     summary_parts = []
     title = details.get("title")

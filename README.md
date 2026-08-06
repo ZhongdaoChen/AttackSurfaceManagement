@@ -157,6 +157,8 @@ python3 upload_to_oss.py \
 
 `Wiz链接` 会根据 `endpoint_id` 生成 Wiz 控制台链接，点击后可打开对应 application endpoint 页面。
 
+非标准端口的 `http response` 会优先显示 HTTPS/HTTP 探测结果，例如 `https failed: timed out; http returned HTTP 200`。
+
 ### risk_level
 
 - `high`：发现疑似敏感内容暴露，例如目录列表、secret-like value、错误栈、备份文件线索；或敏感非标准端口内容不可判定且无低优先级订阅例外。

@@ -56,6 +56,8 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
         self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertIn("https failed: connection refused", findings[0]["details"]["http_probe_result"])
+        self.assertIn("http failed: connection refused", findings[0]["details"]["http_probe_result"])
 
     def test_standard_ports_do_not_return_non_standard_port_finding(self):
         for port in (80, 443):
@@ -180,6 +182,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
         self.assertEqual(findings[0]["risk_level"], "high")
         self.assertEqual(findings[0]["details"]["probe_scheme"], "https")
+        self.assertEqual(findings[0]["details"]["http_probe_result"], "https returned HTTP 200")
         self.assertIn("directory_listing", findings[0]["details"]["signals"])
 
     def test_non_standard_open_port_tries_http_after_https_failure(self):
@@ -213,6 +216,10 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["check_id"], "https_login_page")
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["probe_scheme"], "http")
+        self.assertEqual(
+            findings[0]["details"]["http_probe_result"],
+            "https failed: wrong version number; http returned HTTP 200",
+        )
 
     def test_non_standard_open_port_probe_uses_short_timeout(self):
         endpoint = {
@@ -1106,6 +1113,28 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
         self.assertEqual(count, 11)
         self.assertEqual(output.flush_line_counts, [11, 12])
+
+    def test_write_findings_csv_prefers_http_probe_result_for_response_summary(self):
+        output = StringIO()
+        findings = [
+            {
+                "endpoint_name": "app.example.com:9200",
+                "port": 9200,
+                "cloudPlatform": "AWS",
+                "check_id": "non_standard_open_port",
+                "risk_level": "low",
+                "evidence": "Open non-standard internet-facing port 9200.",
+                "recommendation": "Keep monitored.",
+                "details": {
+                    "http_probe_result": "https failed: timed out; http failed: connection refused",
+                },
+            }
+        ]
+
+        asm.write_findings_csv(findings, output)
+
+        rows = list(csv.DictReader(StringIO(output.getvalue())))
+        self.assertEqual(rows[0]["http response"], "https failed: timed out; http failed: connection refused")
 
     def test_build_llm_prompt_requests_csv_friendly_evidence(self):
         prompt = asm.build_llm_prompt(
