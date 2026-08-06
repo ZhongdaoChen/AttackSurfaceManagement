@@ -29,6 +29,7 @@ DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_QWEN_MODEL = "qwen-plus"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
+NON_STANDARD_PORT_PROBE_TIMEOUT_SECONDS = 5
 LOW_RISK_SUBSCRIPTIONS = {"fdp", "197575089658"}
 SUBSCRIPTION_FIELDS = (
     "subscription",
@@ -281,9 +282,19 @@ def non_standard_port_content_findings(
     context: CheckContext,
 ) -> list[dict[str, Any]] | None:
     probe_errors = []
+    probe_context = CheckContext(
+        fetcher=context.fetcher,
+        timeout_seconds=NON_STANDARD_PORT_PROBE_TIMEOUT_SECONDS,
+        body_limit_bytes=context.body_limit_bytes,
+        ca_bundle=context.ca_bundle,
+        insecure_tls=context.insecure_tls,
+        llm_enabled=context.llm_enabled,
+        llm_client=context.llm_client,
+        response_summaries=context.response_summaries,
+    )
     for scheme in ("https", "http"):
         try:
-            response = fetch_endpoint(endpoint, scheme, context)
+            response = fetch_endpoint(endpoint, scheme, probe_context)
         except (urllib.error.URLError, ValueError, http.client.HTTPException, OSError, ConnectionResetError) as exc:
             probe_errors.append({"scheme": scheme, "error": redirect_fetch_error_reason(exc)})
             continue

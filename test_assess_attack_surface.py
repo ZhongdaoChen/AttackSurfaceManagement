@@ -172,6 +172,28 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["probe_scheme"], "http")
 
+    def test_non_standard_open_port_probe_uses_short_timeout(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 9200,
+            "protocols": ["HTTPS"],
+            "portStatus": "OPEN",
+        }
+        captured_timeouts = []
+
+        def fetcher(request, timeout, context=None):
+            captured_timeouts.append(timeout)
+            raise asm.urllib.error.URLError("timed out")
+
+        findings = asm.NonStandardPortChecker().check(
+            endpoint,
+            asm.CheckContext(fetcher=fetcher, timeout_seconds=30),
+        )
+
+        self.assertEqual(captured_timeouts, [5, 5])
+        self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
+
     def test_non_standard_open_port_uses_llm_for_http_200_content(self):
         llm_calls = []
         endpoint = {
