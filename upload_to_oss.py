@@ -131,6 +131,7 @@ def signed_put_request(
     payload_hash = "UNSIGNED-PAYLOAD"
     security_token = credentials["SecurityToken"]
     headers = {
+        "content-type": "application/octet-stream",
         "host": host,
         "x-oss-content-sha256": payload_hash,
         "x-oss-date": date_time,
@@ -138,7 +139,7 @@ def signed_put_request(
     }
     authorization = oss_v4_authorization(
         method="PUT",
-        canonical_uri=f"/{encoded_key}",
+        canonical_uri=f"/{bucket}/{encoded_key}",
         headers=headers,
         payload_hash=payload_hash,
         access_key_id=credentials["AccessKeyId"],
@@ -149,6 +150,7 @@ def signed_put_request(
     )
     request_headers = {
         "Authorization": authorization,
+        "Content-Type": "application/octet-stream",
         "Content-Length": str(len(body)),
         "x-oss-content-sha256": payload_hash,
         "x-oss-date": date_time,

@@ -120,11 +120,32 @@ class UploadToOssTests(unittest.TestCase):
         self.assertEqual(captured["url"], "https://asm-bucket.oss-cn-hangzhou.aliyuncs.com/asm-findings/result.csv")
         self.assertEqual(captured["method"], "PUT")
         self.assertEqual(captured["data"], b"csv-content")
+        self.assertEqual(captured["headers"]["Content-type"], "application/octet-stream")
         self.assertEqual(captured["headers"]["X-oss-security-token"], "token")
         self.assertEqual(captured["headers"]["X-oss-content-sha256"], "UNSIGNED-PAYLOAD")
         self.assertIn("OSS4-HMAC-SHA256", captured["headers"]["Authorization"])
-        self.assertIn("AdditionalHeaders=", captured["headers"]["Authorization"])
+        self.assertIn("AdditionalHeaders=content-type;host;x-oss-content-sha256;x-oss-date;x-oss-security-token", captured["headers"]["Authorization"])
         self.assertNotIn("SignedHeaders=", captured["headers"]["Authorization"])
+
+    def test_signed_put_request_uses_bucket_in_canonical_uri(self):
+        request = upload_to_oss.signed_put_request(
+            endpoint="https://oss-cn-shanghai-internal.aliyuncs.com",
+            bucket="appsec-asm",
+            object_key="asm-findings/result.csv",
+            body=b"csv-content",
+            credentials={
+                "AccessKeyId": "STS.access",
+                "AccessKeySecret": "secret",
+                "SecurityToken": "token",
+            },
+        )
+
+        self.assertEqual(
+            request.full_url,
+            "https://appsec-asm.oss-cn-shanghai-internal.aliyuncs.com/asm-findings/result.csv",
+        )
+        self.assertIn("cn-shanghai/oss/aliyun_v4_request", request.headers["Authorization"])
+        self.assertIn("AdditionalHeaders=content-type;host;x-oss-content-sha256;x-oss-date;x-oss-security-token", request.headers["Authorization"])
 
     def test_upload_file_reports_oss_error_body(self):
         with tempfile.TemporaryDirectory() as temp_dir:
