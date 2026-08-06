@@ -40,6 +40,41 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
             self.assertEqual(findings, [])
 
+    def test_non_standard_open_port_for_fdp_subscription_is_low_risk(self):
+        endpoint = {
+            "id": "4c8a125f-60e5-50ec-bf5e-7dd14ce98056",
+            "name": "68.79.15.14:9095",
+            "host": "68.79.15.14",
+            "port": 9095,
+            "protocols": ["OTHER"],
+            "portStatus": "OPEN",
+            "exposureLevel": "HIGH",
+            "subscription": "FDP",
+        }
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "FDP")
+
+    def test_non_standard_open_port_for_exempt_account_id_is_low_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 9095,
+            "protocols": ["OTHER"],
+            "portStatus": "OPEN",
+            "accountId": "197575089658",
+        }
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext())
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "197575089658")
+
     def test_http_80_redirect_to_https_sensitive_content_is_high_risk(self):
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 80, "protocols": ["HTTP"]}
         responses = {

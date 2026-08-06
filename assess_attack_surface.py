@@ -29,6 +29,15 @@ DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_QWEN_MODEL = "qwen-plus"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
+LOW_RISK_SUBSCRIPTIONS = {"fdp", "197575089658"}
+SUBSCRIPTION_FIELDS = (
+    "subscription",
+    "Subscription",
+    "subscriptionName",
+    "subscriptionId",
+    "accountId",
+    "cloudAccountId",
+)
 
 
 @dataclass(frozen=True)
@@ -235,6 +244,19 @@ def is_connection_reset_error(exc: BaseException) -> bool:
     return "connection reset by peer" in str(exc).lower()
 
 
+def subscription_value(endpoint: dict[str, Any]) -> str:
+    for field in SUBSCRIPTION_FIELDS:
+        value = endpoint.get(field)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def is_low_risk_subscription(endpoint: dict[str, Any]) -> bool:
+    value = subscription_value(endpoint)
+    return value.lower() in LOW_RISK_SUBSCRIPTIONS
+
+
 class NonStandardPortChecker:
     check_id = "non_standard_open_port"
 
@@ -242,14 +264,24 @@ class NonStandardPortChecker:
         port = endpoint.get("port")
         if endpoint.get("portStatus") != "OPEN" or port in (80, 443):
             return []
+        subscription = subscription_value(endpoint)
+        low_risk_subscription = is_low_risk_subscription(endpoint)
         return [
             finding(
                 endpoint,
                 self.check_id,
-                "high",
+                "low" if low_risk_subscription else "high",
                 f"Open non-standard internet-facing port {port}.",
-                "Confirm business need; close the port or restrict it with an allowlist, VPN, WAF, or internal load balancer.",
-                details={"port": port, "protocols": endpoint.get("protocols")},
+                (
+                    "Confirm business need; subscription/account exception lowers priority, but keep the port documented and monitored."
+                    if low_risk_subscription
+                    else "Confirm business need; close the port or restrict it with an allowlist, VPN, WAF, or internal load balancer."
+                ),
+                details={
+                    "port": port,
+                    "protocols": endpoint.get("protocols"),
+                    **({"subscription": subscription} if subscription else {}),
+                },
             )
         ]
 
