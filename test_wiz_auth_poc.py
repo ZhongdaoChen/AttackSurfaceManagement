@@ -249,7 +249,20 @@ class WizAuthPoCTests(unittest.TestCase):
                 return {
                     "applicationEndpoints": {
                         "nodes": [
-                            {"id": "endpoint-1", "name": "first", "host": "one.example.com", "port": 443}
+                            {
+                                "id": "endpoint-1",
+                                "name": "first",
+                                "host": "one.example.com",
+                                "port": 443,
+                                "exposureLevel": "HIGH",
+                            },
+                            {
+                                "id": "endpoint-medium",
+                                "name": "medium",
+                                "host": "medium.example.com",
+                                "port": 443,
+                                "exposureLevel": "MEDIUM",
+                            },
                         ],
                         "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
                     }
@@ -257,7 +270,20 @@ class WizAuthPoCTests(unittest.TestCase):
             return {
                 "applicationEndpoints": {
                     "nodes": [
-                        {"id": "endpoint-2", "name": "second", "host": "two.example.com", "port": 8443}
+                        {
+                            "id": "endpoint-2",
+                            "name": "second",
+                            "host": "two.example.com",
+                            "port": 8443,
+                            "exposureLevel": "HIGH",
+                        },
+                        {
+                            "id": "endpoint-low",
+                            "name": "low",
+                            "host": "low.example.com",
+                            "port": 443,
+                            "exposureLevel": "LOW",
+                        },
                     ],
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                 }
@@ -276,8 +302,20 @@ class WizAuthPoCTests(unittest.TestCase):
         self.assertEqual(
             endpoints,
             [
-                {"id": "endpoint-1", "name": "first", "host": "one.example.com", "port": 443},
-                {"id": "endpoint-2", "name": "second", "host": "two.example.com", "port": 8443},
+                {
+                    "id": "endpoint-1",
+                    "name": "first",
+                    "host": "one.example.com",
+                    "port": 443,
+                    "exposureLevel": "HIGH",
+                },
+                {
+                    "id": "endpoint-2",
+                    "name": "second",
+                    "host": "two.example.com",
+                    "port": 8443,
+                    "exposureLevel": "HIGH",
+                },
             ],
         )
         self.assertIn("applicationEndpoints", calls[0]["query"])
@@ -286,10 +324,7 @@ class WizAuthPoCTests(unittest.TestCase):
             {
                 "first": 1,
                 "after": None,
-                "filterBy": {
-                    "project": ["242f91dd-f1c6-573f-b8b4-678df5581477"],
-                    "exposureLevel": ["HIGH"],
-                },
+                "filterBy": {"project": ["242f91dd-f1c6-573f-b8b4-678df5581477"]},
             },
         )
         self.assertEqual(
@@ -297,10 +332,7 @@ class WizAuthPoCTests(unittest.TestCase):
             {
                 "first": 1,
                 "after": "cursor-1",
-                "filterBy": {
-                    "project": ["242f91dd-f1c6-573f-b8b4-678df5581477"],
-                    "exposureLevel": ["HIGH"],
-                },
+                "filterBy": {"project": ["242f91dd-f1c6-573f-b8b4-678df5581477"]},
             },
         )
         self.assertEqual(calls[0]["context"], "Application endpoints query")
@@ -335,7 +367,7 @@ class WizAuthPoCTests(unittest.TestCase):
             {
                 "first": 10,
                 "after": None,
-                "filterBy": {"project": ["project-123"], "exposureLevel": ["HIGH"]},
+                "filterBy": {"project": ["project-123"]},
             },
         )
 

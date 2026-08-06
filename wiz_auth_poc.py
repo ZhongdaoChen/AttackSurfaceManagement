@@ -215,7 +215,7 @@ def iter_application_endpoints(
             {
                 "first": page_size,
                 "after": after,
-                "filterBy": {"project": [config.project_id], "exposureLevel": ["HIGH"]},
+                "filterBy": {"project": [config.project_id]},
             },
             "Application endpoints query",
         )
@@ -228,7 +228,8 @@ def iter_application_endpoints(
         for node in nodes:
             if not isinstance(node, dict):
                 raise WizRequestError("Application endpoints response included a non-object node")
-            yield node
+            if node.get("exposureLevel") == "HIGH":
+                yield node
 
         page_info = connection.get("pageInfo")
         if not isinstance(page_info, dict):
