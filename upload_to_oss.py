@@ -160,7 +160,10 @@ def signed_put_request(
 def oss_region_from_endpoint(host: str) -> str:
     first_label = host.split(".", 1)[0]
     if first_label.startswith("oss-"):
-        return first_label[len("oss-") :]
+        region = first_label[len("oss-") :]
+        if region.endswith("-internal"):
+            return region[: -len("-internal")]
+        return region
     return first_label
 
 

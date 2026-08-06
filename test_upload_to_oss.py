@@ -72,6 +72,12 @@ class UploadToOssTests(unittest.TestCase):
 
         self.assertEqual(key, "asm-findings/20260806-140118-asm-findings.csv")
 
+    def test_oss_region_from_internal_endpoint_removes_internal_suffix(self):
+        self.assertEqual(
+            upload_to_oss.oss_region_from_endpoint("oss-cn-shanghai-internal.aliyuncs.com"),
+            "cn-shanghai",
+        )
+
     def test_upload_file_puts_object_with_security_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "result.csv"
