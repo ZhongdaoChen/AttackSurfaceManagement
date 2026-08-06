@@ -1261,6 +1261,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 )
 
             uploaded = []
+            status_output = StringIO()
             with (
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(asm.upload_to_oss, "load_dotenv") as load_dotenv,
@@ -1271,6 +1272,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 ),
                 patch.object(asm.upload_to_oss, "fetch_role_credentials", return_value={"AccessKeyId": "id", "AccessKeySecret": "secret", "SecurityToken": "token"}) as fetch_credentials,
                 patch.object(asm.upload_to_oss, "upload_file", side_effect=lambda path, endpoint, bucket, credentials, prefix: uploaded.append((path, endpoint, bucket, credentials, prefix)) or f"asm-findings/{os.path.basename(path)}"),
+                patch.object(sys, "stderr", status_output),
             ):
                 exit_code = asm.main(
                     [
@@ -1291,6 +1293,18 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual([item[0] for item in uploaded], [json_path, csv_path])
         self.assertEqual({item[1] for item in uploaded}, {"https://oss-cn-shanghai-internal.aliyuncs.com"})
         self.assertEqual({item[2] for item in uploaded}, {"appsec-asm"})
+        self.assertIn(f"Uploading {json_path} to OSS.", status_output.getvalue())
+        self.assertIn(f"Uploading {csv_path} to OSS.", status_output.getvalue())
+
+    def test_upload_outputs_to_oss_requires_existing_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_json_path = os.path.join(temp_dir, "missing.jsonl")
+            csv_path = os.path.join(temp_dir, "findings.csv")
+            with open(csv_path, "w", encoding="utf-8") as csv_file:
+                csv_file.write("header\n")
+
+            with self.assertRaisesRegex(FileNotFoundError, "missing.jsonl"):
+                asm.upload_outputs_to_oss(missing_json_path, csv_path)
 
     def test_main_without_output_creates_timestamped_jsonl_and_csv_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:

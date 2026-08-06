@@ -1146,6 +1146,9 @@ def upload_outputs_to_oss(output_path: str, csv_output_path: str | None) -> None
     paths = [path for path in (output_path, csv_output_path) if path and path != "-"]
     if not paths:
         return
+    missing_paths = [path for path in paths if not os.path.exists(path)]
+    if missing_paths:
+        raise FileNotFoundError(f"Cannot upload missing output file(s): {', '.join(missing_paths)}")
     upload_to_oss.load_dotenv()
     endpoint = os.getenv("OSS_ENDPOINT", "").strip()
     bucket = os.getenv("OSS_BUCKET", "").strip()
@@ -1160,6 +1163,7 @@ def upload_outputs_to_oss(output_path: str, csv_output_path: str | None) -> None
         raise ValueError(f"Missing required OSS environment variables: {', '.join(missing)}")
     credentials = upload_to_oss.fetch_role_credentials(role_name)
     for path in paths:
+        print(f"Uploading {path} to OSS.", file=sys.stderr)
         object_key = upload_to_oss.upload_file(path, endpoint, bucket, credentials, prefix)
         print(f"Uploaded {path} to oss://{bucket}/{object_key}", file=sys.stderr)
 
