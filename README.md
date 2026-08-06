@@ -103,6 +103,12 @@ python3 assess_attack_surface.py
 
 未指定 `--output` 时，会自动生成 `YYYYMMDD-HHMMSS-asm-findings.jsonl` 和 `YYYYMMDD-HHMMSS-asm-findings.csv`。
 
+如果 ECS 已配置 OSS 变量和 RAM Role，可在扫描结束后自动上传本次生成的 JSONL/CSV：
+
+```bash
+python3 assess_attack_surface.py --upload-oss
+```
+
 ### 5. 使用已导出的 input 重新扫描
 
 ```bash

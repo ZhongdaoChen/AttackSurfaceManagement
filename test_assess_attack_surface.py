@@ -1232,6 +1232,66 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(csv_rows[0]["endpoint_name"], "https://app.example.com:443")
         self.assertEqual(csv_rows[0]["http状态码"], "200")
 
+    def test_main_uploads_outputs_to_oss_when_requested(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, "input.jsonl")
+            json_path = os.path.join(temp_dir, "findings.jsonl")
+            csv_path = os.path.join(temp_dir, "findings.csv")
+            with open(input_path, "w", encoding="utf-8") as input_file:
+                input_file.write(
+                    json.dumps(
+                        {
+                            "id": "endpoint-1",
+                            "name": "https://app.example.com:443",
+                            "host": "app.example.com",
+                            "port": 443,
+                            "protocols": ["HTTPS"],
+                            "cloudPlatform": "AWS",
+                        }
+                    )
+                    + "\n"
+                )
+
+            def fetcher(request, timeout, context=None):
+                return asm.HttpResponse(
+                    url=request.full_url,
+                    status=200,
+                    headers={"Content-Type": "text/html"},
+                    body=b"<html><title>Welcome</title><p>Public page</p></html>",
+                )
+
+            uploaded = []
+            with (
+                patch.object(asm, "fetch_url", fetcher),
+                patch.object(asm.upload_to_oss, "load_dotenv") as load_dotenv,
+                patch.dict(
+                    os.environ,
+                    {"OSS_ENDPOINT": "https://oss-cn-shanghai-internal.aliyuncs.com", "OSS_BUCKET": "appsec-asm"},
+                    clear=False,
+                ),
+                patch.object(asm.upload_to_oss, "fetch_role_credentials", return_value={"AccessKeyId": "id", "AccessKeySecret": "secret", "SecurityToken": "token"}) as fetch_credentials,
+                patch.object(asm.upload_to_oss, "upload_file", side_effect=lambda path, endpoint, bucket, credentials, prefix: uploaded.append((path, endpoint, bucket, credentials, prefix)) or f"asm-findings/{os.path.basename(path)}"),
+            ):
+                exit_code = asm.main(
+                    [
+                        "--input",
+                        input_path,
+                        "--output",
+                        json_path,
+                        "--csv-output",
+                        csv_path,
+                        "--disable-llm",
+                        "--upload-oss",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        load_dotenv.assert_called_once_with()
+        fetch_credentials.assert_called_once_with(None)
+        self.assertEqual([item[0] for item in uploaded], [json_path, csv_path])
+        self.assertEqual({item[1] for item in uploaded}, {"https://oss-cn-shanghai-internal.aliyuncs.com"})
+        self.assertEqual({item[2] for item in uploaded}, {"appsec-asm"})
+
     def test_main_without_output_creates_timestamped_jsonl_and_csv_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, "input.jsonl")

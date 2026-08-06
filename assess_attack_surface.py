@@ -19,6 +19,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator, Protocol, TextIO
 
+import upload_to_oss
 import wiz_auth_poc
 
 
@@ -1070,6 +1071,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Disable OpenAI-compatible LLM content judgment.",
     )
     parser.add_argument("--csv-output", help="Output findings CSV file in addition to JSONL output.")
+    parser.add_argument("--upload-oss", action="store_true", help="Upload generated output files to OSS after scanning.")
     return parser
 
 
@@ -1134,8 +1136,32 @@ def main(argv: list[str] | None = None) -> int:
             output.close()
         if csv_output is not None:
             csv_output.close()
+    if args.upload_oss:
+        upload_outputs_to_oss(output_path, csv_output_path)
     print(f"Wrote {count} findings.", file=sys.stderr)
     return 0
+
+
+def upload_outputs_to_oss(output_path: str, csv_output_path: str | None) -> None:
+    paths = [path for path in (output_path, csv_output_path) if path and path != "-"]
+    if not paths:
+        return
+    upload_to_oss.load_dotenv()
+    endpoint = os.getenv("OSS_ENDPOINT", "").strip()
+    bucket = os.getenv("OSS_BUCKET", "").strip()
+    role_name = os.getenv("OSS_ROLE_NAME", "").strip() or None
+    prefix = os.getenv("OSS_PREFIX", upload_to_oss.DEFAULT_OSS_PREFIX)
+    missing = []
+    if not endpoint:
+        missing.append("OSS_ENDPOINT")
+    if not bucket:
+        missing.append("OSS_BUCKET")
+    if missing:
+        raise ValueError(f"Missing required OSS environment variables: {', '.join(missing)}")
+    credentials = upload_to_oss.fetch_role_credentials(role_name)
+    for path in paths:
+        object_key = upload_to_oss.upload_file(path, endpoint, bucket, credentials, prefix)
+        print(f"Uploaded {path} to oss://{bucket}/{object_key}", file=sys.stderr)
 
 
 if __name__ == "__main__":
