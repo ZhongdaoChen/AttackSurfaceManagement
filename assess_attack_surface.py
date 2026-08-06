@@ -30,6 +30,38 @@ DEFAULT_QWEN_MODEL = "qwen-plus"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
 NON_STANDARD_PORT_PROBE_TIMEOUT_SECONDS = 5
+SENSITIVE_NON_STANDARD_PORTS = {
+    22,
+    23,
+    161,
+    445,
+    623,
+    1433,
+    1521,
+    2181,
+    2375,
+    2376,
+    3306,
+    3389,
+    5432,
+    5672,
+    5900,
+    5985,
+    5986,
+    6379,
+    6443,
+    7001,
+    7002,
+    8080,
+    8500,
+    8983,
+    9042,
+    9092,
+    9200,
+    9300,
+    10250,
+    15672,
+}
 LOW_RISK_SUBSCRIPTIONS = {"fdp", "197575089658"}
 SUBSCRIPTION_FIELDS = (
     "subscription",
@@ -314,19 +346,26 @@ def non_standard_port_content_findings(
 def fallback_non_standard_port_finding(endpoint: dict[str, Any], port: Any) -> dict[str, Any]:
     subscription = subscription_value(endpoint)
     low_risk_subscription = is_low_risk_subscription(endpoint)
+    sensitive_port = port in SENSITIVE_NON_STANDARD_PORTS
+    risk_level = "high" if sensitive_port and not low_risk_subscription else "low"
     return finding(
         endpoint,
         NonStandardPortChecker.check_id,
-        "low" if low_risk_subscription else "high",
+        risk_level,
         f"Open non-standard internet-facing port {port}.",
         (
             "Confirm business need; subscription/account exception lowers priority, but keep the port documented and monitored."
             if low_risk_subscription
-            else "Confirm business need; close the port or restrict it with an allowlist, VPN, WAF, or internal load balancer."
+            else (
+                "Confirm business need; close the sensitive port or restrict it with an allowlist, VPN, WAF, or internal load balancer."
+                if sensitive_port
+                else "Confirm business need and keep the non-sensitive non-standard port documented and monitored."
+            )
         ),
         details={
             "port": port,
             "protocols": endpoint.get("protocols"),
+            "sensitive_port": sensitive_port,
             **({"subscription": subscription} if subscription else {}),
         },
     )
