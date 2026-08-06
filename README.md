@@ -149,7 +149,7 @@ python3 assess_attack_surface.py \
 filterBy: {"project": [WIZ_PROJECT_ID]}
 ```
 
-拉取后，代码会在本地只保留 `exposureLevel=HIGH` 的 endpoint 进入扫描。
+拉取后，代码会在本地只保留 `exposureLevel=HIGH` 或 `exposureLevel=MEDIUM` 的 endpoint 进入扫描。
 
 如果使用 `--input` 扫描已导出的 JSONL，则会扫描输入文件中的所有 endpoint，不再额外按 `exposureLevel` 过滤。
 

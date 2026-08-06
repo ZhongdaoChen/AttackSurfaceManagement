@@ -228,7 +228,7 @@ def iter_application_endpoints(
         for node in nodes:
             if not isinstance(node, dict):
                 raise WizRequestError("Application endpoints response included a non-object node")
-            if node.get("exposureLevel") == "HIGH":
+            if node.get("exposureLevel") in {"HIGH", "MEDIUM"}:
                 yield node
 
         page_info = connection.get("pageInfo")

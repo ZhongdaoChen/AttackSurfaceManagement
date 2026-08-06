@@ -310,6 +310,13 @@ class WizAuthPoCTests(unittest.TestCase):
                     "exposureLevel": "HIGH",
                 },
                 {
+                    "id": "endpoint-medium",
+                    "name": "medium",
+                    "host": "medium.example.com",
+                    "port": 443,
+                    "exposureLevel": "MEDIUM",
+                },
+                {
                     "id": "endpoint-2",
                     "name": "second",
                     "host": "two.example.com",
