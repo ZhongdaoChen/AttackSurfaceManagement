@@ -24,6 +24,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "portStatus": "OPEN",
             "exposureLevel": "MEDIUM",
             "cloudAccount": {"name": "regular-account"},
+            "tagEmails": ["owner@example.com", "team@example.com"],
         }
 
         def fetcher(request, timeout, context=None):
@@ -35,6 +36,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
         self.assertEqual(findings[0]["risk_level"], "high")
         self.assertEqual(findings[0]["cloudAccountName"], "regular-account")
+        self.assertEqual(findings[0]["tagEmails"], ["owner@example.com", "team@example.com"])
         self.assertIn("8080", findings[0]["evidence"])
 
     def test_non_standard_open_port_without_response_on_non_sensitive_port_is_low_risk(self):
@@ -1024,6 +1026,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 "port": 443,
                 "cloudPlatform": "AWS",
                 "cloudAccountName": "adidas-linked-bam-pro-cn",
+                "tagEmails": ["reema.jain@adidas.com", "AAD-AWS-ADIDAS-LINKED-BAM-PRO-CN-Admin@groups.adidas.com"],
                 "check_id": "llm_sensitive_content",
                 "risk_level": "medium",
                 "evidence": "<input name='token' value='secret-token'>",
@@ -1061,6 +1064,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 "端口号": "443",
                 "cloudPlatform": "AWS",
                 "CloudAccount": "adidas-linked-bam-pro-cn",
+                "TagEmails": "reema.jain@adidas.com; AAD-AWS-ADIDAS-LINKED-BAM-PRO-CN-Admin@groups.adidas.com",
                 "http状态码": "200",
                 "http response": "<input name='token' value='secret-token'>",
                 "LLM意见": "LLM found a sensitive token in the login HTML. Protect the token.",
@@ -1069,6 +1073,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(rows[1]["http response"], "Sign in; content_type=text/html")
         self.assertEqual(rows[1]["CloudAccount"], "")
+        self.assertEqual(rows[1]["TagEmails"], "")
         self.assertEqual(rows[1]["LLM意见"], "HTTPS endpoint appears to be a login page rather than direct sensitive content.")
         self.assertEqual(rows[1]["Wiz链接"], "")
 
@@ -1336,10 +1341,16 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                                 "port": 443,
                                 "protocols": ["HTTPS"],
                                 "cloudPlatform": "AWS",
+                                "cloudAccount": {"id": "cloud-account-1", "name": "Account One"},
                             }
                         ]
                     ),
                 ) as iter_endpoints,
+                patch.object(
+                    asm.wiz_auth_poc,
+                    "fetch_cloud_account_tag_emails",
+                    return_value=["owner@example.com", "admin@example.com"],
+                ) as fetch_tag_emails,
             ):
                 exit_code = asm.main(
                     ["--output", json_path, "--csv-output", csv_path, "--limit", "1", "--disable-llm"]
@@ -1354,7 +1365,10 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         load_config.assert_called_once_with()
         fetch_token.assert_called_once_with(config)
         iter_endpoints.assert_called_once_with(config, "token-123")
+        fetch_tag_emails.assert_called_once_with(config, "token-123", "cloud-account-1")
         self.assertEqual(json_rows[0]["endpoint_name"], "https://wiz.example.com:443")
+        self.assertEqual(json_rows[0]["tagEmails"], ["owner@example.com", "admin@example.com"])
+        self.assertEqual(csv_rows[0]["TagEmails"], "owner@example.com; admin@example.com")
         self.assertEqual(
             csv_rows[0]["Wiz链接"],
             "https://app.wiz.io/p/secengcnaccounts/inventory/application-endpoints#%7E%28entity%7E%28%7E%27endpoint-1*2cENDPOINT%29%29",

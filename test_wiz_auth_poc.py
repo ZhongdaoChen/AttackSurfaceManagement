@@ -432,6 +432,74 @@ class WizAuthPoCTests(unittest.TestCase):
     def test_redact_secret_keeps_short_hint_only(self):
         self.assertEqual(wiz_auth_poc.redact_secret("abcdef123456"), "abcd...3456")
 
+    def test_extract_email_values_recurses_through_tag_metadata(self):
+        value = {
+            "tags": {
+                "ownerEmail": "reema.jain@adidas.com",
+                "systemContact": "AAD-AWS-ADIDAS-LINKED-BAM-PRO-CN-Admin@groups.adidas.com",
+                "owner": "Reema Jain",
+            },
+            "accountTags": [
+                {"Key": "ownerEmail", "Value": "reema.jain@adidas.com"},
+                {"Key": "team", "Value": "not-an-email"},
+            ],
+        }
+
+        emails = wiz_auth_poc.extract_email_values(value)
+
+        self.assertEqual(
+            emails,
+            [
+                "AAD-AWS-ADIDAS-LINKED-BAM-PRO-CN-Admin@groups.adidas.com",
+                "reema.jain@adidas.com",
+            ],
+        )
+
+    def test_fetch_cloud_account_tag_emails_queries_graph_entity_metadata(self):
+        calls = []
+
+        def fake_execute_graphql(config, access_token, query, variables, context):
+            calls.append({"query": query, "variables": variables, "context": context})
+            return {
+                "graphEntity": {
+                    "properties": {
+                        "tags": {
+                            "ownerEmail": "reema.jain@adidas.com",
+                            "systemContact": "AAD-AWS-ADIDAS-LINKED-BAM-PRO-CN-Admin@groups.adidas.com",
+                        }
+                    },
+                    "providerData": {
+                        "accountTags": [
+                            {"Key": "ownerEmail", "Value": "reema.jain@adidas.com"},
+                        ]
+                    },
+                }
+            }
+
+        config = wiz_auth_poc.WizConfig(
+            client_id="client-id",
+            client_secret="client-secret",
+            api_url="https://api.eu7.app.wiz.io/graphql",
+            auth_url="https://auth.app.wiz.io/oauth/token",
+        )
+
+        with patch.object(wiz_auth_poc, "execute_graphql", fake_execute_graphql):
+            emails = wiz_auth_poc.fetch_cloud_account_tag_emails(
+                config,
+                "token-123",
+                "31e7fa13-a9d0-59cb-9c5f-ae6bebce3e11",
+            )
+
+        self.assertEqual(
+            emails,
+            [
+                "AAD-AWS-ADIDAS-LINKED-BAM-PRO-CN-Admin@groups.adidas.com",
+                "reema.jain@adidas.com",
+            ],
+        )
+        self.assertIn("graphEntity", calls[0]["query"])
+        self.assertEqual(calls[0]["variables"], {"id": "31e7fa13-a9d0-59cb-9c5f-ae6bebce3e11"})
+
 
 if __name__ == "__main__":
     unittest.main()

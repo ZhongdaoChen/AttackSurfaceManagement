@@ -132,6 +132,7 @@ python3 upload_to_oss.py \
 - `port`
 - `cloudPlatform`
 - `cloudAccountName`
+- `tagEmails`
 - `exposureLevel`
 - `check_id`
 - `risk_level`
@@ -148,6 +149,7 @@ python3 upload_to_oss.py \
 - `端口号`
 - `cloudPlatform`
 - `CloudAccount`
+- `TagEmails`
 - `http状态码`
 - `http response`
 - `LLM意见`

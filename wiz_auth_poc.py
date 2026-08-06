@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import ssl
 import sys
 import urllib.error
@@ -52,6 +53,15 @@ query ListApplicationEndpoints($first: Int!, $after: String, $filterBy: Applicat
   }
 }
 """.strip()
+CLOUD_ACCOUNT_TAG_EMAILS_QUERY = """
+query CloudAccountTagEmails($id: ID!) {
+  graphEntity(id: $id) {
+    properties
+    providerData
+  }
+}
+""".strip()
+EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
 class ConfigError(Exception):
@@ -256,6 +266,45 @@ def write_json_lines(endpoints: Iterable[dict[str, Any]], output: TextIO) -> int
         output.write("\n")
         count += 1
     return count
+
+
+def extract_email_values(value: Any) -> list[str]:
+    emails: set[str] = set()
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            for key, nested_value in item.items():
+                visit(key)
+                visit(nested_value)
+            return
+        if isinstance(item, list):
+            for nested_value in item:
+                visit(nested_value)
+            return
+        if isinstance(item, str):
+            emails.update(EMAIL_PATTERN.findall(item))
+
+    visit(value)
+    return sorted(emails)
+
+
+def fetch_cloud_account_tag_emails(config: WizConfig, access_token: str, cloud_account_id: str) -> list[str]:
+    data = execute_graphql(
+        config,
+        access_token,
+        CLOUD_ACCOUNT_TAG_EMAILS_QUERY,
+        {"id": cloud_account_id},
+        "Cloud account tag email query",
+    )
+    graph_entity = data.get("graphEntity")
+    if not isinstance(graph_entity, dict):
+        return []
+    return extract_email_values(
+        {
+            "properties": graph_entity.get("properties"),
+            "providerData": graph_entity.get("providerData"),
+        }
+    )
 
 
 def _open_json(

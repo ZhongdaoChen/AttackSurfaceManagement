@@ -713,6 +713,7 @@ CSV_FIELDNAMES = [
     "端口号",
     "cloudPlatform",
     "CloudAccount",
+    "TagEmails",
     "http状态码",
     "http response",
     "LLM意见",
@@ -765,6 +766,7 @@ def csv_row_for_finding(finding_item: dict[str, Any]) -> dict[str, Any]:
         "端口号": finding_item.get("port") or "",
         "cloudPlatform": finding_item.get("cloudPlatform") or "",
         "CloudAccount": finding_item.get("cloudAccountName") or "",
+        "TagEmails": "; ".join(str(email) for email in finding_item.get("tagEmails") or []),
         "http状态码": details.get("http_status") or details.get("status") or "",
         "http response": csv_http_response_summary(finding_item, details),
         "LLM意见": csv_llm_opinion(finding_item, details),
@@ -956,6 +958,37 @@ def cloud_account_name(endpoint: dict[str, Any]) -> str | None:
     return text or None
 
 
+def tag_emails(endpoint: dict[str, Any]) -> list[str]:
+    value = endpoint.get("tagEmails")
+    if not isinstance(value, list):
+        return []
+    return [str(email) for email in value if str(email).strip()]
+
+
+def cloud_account_id(endpoint: dict[str, Any]) -> str:
+    cloud_account = endpoint.get("cloudAccount")
+    if not isinstance(cloud_account, dict):
+        return ""
+    value = cloud_account.get("id")
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def enrich_endpoint_with_tag_emails(
+    endpoint: dict[str, Any],
+    config: wiz_auth_poc.WizConfig,
+    access_token: str,
+    cache: dict[str, list[str]],
+) -> dict[str, Any]:
+    account_id = cloud_account_id(endpoint)
+    if not account_id:
+        return endpoint
+    if account_id not in cache:
+        cache[account_id] = wiz_auth_poc.fetch_cloud_account_tag_emails(config, access_token, account_id)
+    return {**endpoint, "tagEmails": cache[account_id]}
+
+
 def finding(
     endpoint: dict[str, Any],
     check_id: str,
@@ -971,6 +1004,7 @@ def finding(
         "port": endpoint.get("port"),
         "cloudPlatform": endpoint.get("cloudPlatform"),
         "cloudAccountName": cloud_account_name(endpoint),
+        "tagEmails": tag_emails(endpoint),
         "exposureLevel": endpoint.get("exposureLevel"),
         "check_id": check_id,
         "risk_level": risk_level,
@@ -1050,7 +1084,9 @@ def main(argv: list[str] | None = None) -> int:
         load_dotenv()
         config = wiz_auth_poc.load_config()
         access_token = wiz_auth_poc.fetch_access_token(config)
-        yield from wiz_auth_poc.iter_application_endpoints(config, access_token)
+        tag_email_cache: dict[str, list[str]] = {}
+        for endpoint in wiz_auth_poc.iter_application_endpoints(config, access_token):
+            yield enrich_endpoint_with_tag_emails(endpoint, config, access_token, tag_email_cache)
 
     count = 0
     output_path, csv_output_path = resolve_output_paths(args)
