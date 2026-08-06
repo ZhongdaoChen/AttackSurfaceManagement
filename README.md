@@ -61,6 +61,17 @@ This repository contains a Python-based scanner that exports Wiz Application End
 
 `--timeout` 默认是 `30`，`--insecure-tls` 和 `--enable-llm` 默认开启。需要关闭时可使用 `--secure-tls` 或 `--disable-llm`。
 
+### OSS 上传（可选）
+
+如果 ECS 已绑定可写 OSS 的 RAM Role，可以用独立脚本上传生成的 findings 文件。`.env` 中配置：
+
+| 变量 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `OSS_ENDPOINT` | 是 | 无 | OSS endpoint，例如 `https://oss-cn-hangzhou.aliyuncs.com` |
+| `OSS_BUCKET` | 是 | 无 | OSS bucket 名称 |
+| `OSS_PREFIX` | 否 | `asm-findings/` | 上传到 bucket 内的路径前缀 |
+| `OSS_ROLE_NAME` | 否 | 自动从 ECS metadata 发现 | ECS 绑定的 RAM Role 名称 |
+
 ## 常用命令
 
 ### 1. 检查 Wiz 认证和 GraphQL 连通性
@@ -99,6 +110,14 @@ python3 assess_attack_surface.py \
   --input wiz-application-endpoints.jsonl \
   --output asm-findings-full-latest.jsonl \
   --csv-output asm-findings-full-latest.csv
+```
+
+### 6. 上传 findings 到 OSS
+
+```bash
+python3 upload_to_oss.py \
+  20260806-140118-asm-findings.jsonl \
+  20260806-140118-asm-findings.csv
 ```
 
 ## 输出说明
