@@ -128,7 +128,7 @@ def signed_put_request(
     date_time = now.strftime("%Y%m%dT%H%M%SZ")
     date = now.strftime("%Y%m%d")
     region = oss_region_from_endpoint(endpoint_parts.netloc)
-    payload_hash = hashlib.sha256(body).hexdigest()
+    payload_hash = "UNSIGNED-PAYLOAD"
     security_token = credentials["SecurityToken"]
     headers = {
         "host": host,

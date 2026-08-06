@@ -121,6 +121,7 @@ class UploadToOssTests(unittest.TestCase):
         self.assertEqual(captured["method"], "PUT")
         self.assertEqual(captured["data"], b"csv-content")
         self.assertEqual(captured["headers"]["X-oss-security-token"], "token")
+        self.assertEqual(captured["headers"]["X-oss-content-sha256"], "UNSIGNED-PAYLOAD")
         self.assertIn("OSS4-HMAC-SHA256", captured["headers"]["Authorization"])
         self.assertIn("AdditionalHeaders=", captured["headers"]["Authorization"])
         self.assertNotIn("SignedHeaders=", captured["headers"]["Authorization"])
