@@ -62,7 +62,18 @@ SENSITIVE_NON_STANDARD_PORTS = {
     10250,
     15672,
 }
-LOW_RISK_SUBSCRIPTIONS = {"fdp", "197575089658"}
+LOW_RISK_SUBSCRIPTIONS = {
+    "fdp",
+    "197575089658",
+    "adidas-linked-bam-pro-cn",
+    "347233338954",
+    "adidas-linked-tbm-cn",
+    "482708397438",
+    "adidas-linked-bam-dev-cn",
+    "347077314801",
+    "adidas-linked-bam-int-cn",
+    "347221608445",
+}
 SUBSCRIPTION_FIELDS = (
     "subscription",
     "Subscription",

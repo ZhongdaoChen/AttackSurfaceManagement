@@ -23,7 +23,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "protocols": ["HTTP"],
             "portStatus": "OPEN",
             "exposureLevel": "MEDIUM",
-            "cloudAccount": {"name": "adidas-linked-bam-pro-cn"},
+            "cloudAccount": {"name": "regular-account"},
         }
 
         def fetcher(request, timeout, context=None):
@@ -34,7 +34,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
         self.assertEqual(findings[0]["risk_level"], "high")
-        self.assertEqual(findings[0]["cloudAccountName"], "adidas-linked-bam-pro-cn")
+        self.assertEqual(findings[0]["cloudAccountName"], "regular-account")
         self.assertIn("8080", findings[0]["evidence"])
 
     def test_non_standard_open_port_without_response_on_non_sensitive_port_is_low_risk(self):
@@ -128,6 +128,28 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["subscription"], "FDP")
+
+    def test_non_standard_open_port_for_whitelisted_cloud_account_name_is_low_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "71.131.246.78",
+            "port": 9200,
+            "protocols": ["HTTPS"],
+            "portStatus": "OPEN",
+            "cloudAccount": {
+                "name": "adidas-linked-bam-pro-cn",
+                "externalId": "347233338954",
+            },
+        }
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "adidas-linked-bam-pro-cn")
 
     def test_non_standard_open_port_https_sensitive_content_is_high_risk(self):
         endpoint = {
