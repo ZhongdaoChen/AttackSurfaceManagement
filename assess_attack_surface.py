@@ -651,6 +651,7 @@ CSV_FIELDNAMES = [
     "Wiz链接",
     "端口号",
     "cloudPlatform",
+    "CloudAccount",
     "http状态码",
     "http response",
     "LLM意见",
@@ -702,6 +703,7 @@ def csv_row_for_finding(finding_item: dict[str, Any]) -> dict[str, Any]:
         "Wiz链接": wiz_endpoint_url(finding_item.get("endpoint_id")),
         "端口号": finding_item.get("port") or "",
         "cloudPlatform": finding_item.get("cloudPlatform") or "",
+        "CloudAccount": finding_item.get("cloudAccountName") or "",
         "http状态码": details.get("http_status") or details.get("status") or "",
         "http response": csv_http_response_summary(finding_item, details),
         "LLM意见": csv_llm_opinion(finding_item, details),
@@ -882,6 +884,17 @@ def normalize_risk(value: Any) -> str:
     return "unknown"
 
 
+def cloud_account_name(endpoint: dict[str, Any]) -> str | None:
+    cloud_account = endpoint.get("cloudAccount")
+    if not isinstance(cloud_account, dict):
+        return None
+    value = cloud_account.get("name")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def finding(
     endpoint: dict[str, Any],
     check_id: str,
@@ -896,6 +909,7 @@ def finding(
         "host": endpoint.get("host"),
         "port": endpoint.get("port"),
         "cloudPlatform": endpoint.get("cloudPlatform"),
+        "cloudAccountName": cloud_account_name(endpoint),
         "exposureLevel": endpoint.get("exposureLevel"),
         "check_id": check_id,
         "risk_level": risk_level,

@@ -23,6 +23,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             "protocols": ["HTTP"],
             "portStatus": "OPEN",
             "exposureLevel": "MEDIUM",
+            "cloudAccount": {"name": "adidas-linked-bam-pro-cn"},
         }
 
         def fetcher(request, timeout, context=None):
@@ -33,6 +34,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
         self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertEqual(findings[0]["cloudAccountName"], "adidas-linked-bam-pro-cn")
         self.assertIn("8080", findings[0]["evidence"])
 
     def test_standard_ports_do_not_return_non_standard_port_finding(self):
@@ -959,6 +961,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 "endpoint_name": "https://app.example.com:443",
                 "port": 443,
                 "cloudPlatform": "AWS",
+                "cloudAccountName": "adidas-linked-bam-pro-cn",
                 "check_id": "llm_sensitive_content",
                 "risk_level": "medium",
                 "evidence": "<input name='token' value='secret-token'>",
@@ -995,6 +998,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 "Wiz链接": "https://app.wiz.io/p/secengcnaccounts/inventory/application-endpoints#%7E%28entity%7E%28%7E%272e7dca40-b6e1-5e11-aa7e-3303642a6ef0*2cENDPOINT%29%29",
                 "端口号": "443",
                 "cloudPlatform": "AWS",
+                "CloudAccount": "adidas-linked-bam-pro-cn",
                 "http状态码": "200",
                 "http response": "<input name='token' value='secret-token'>",
                 "LLM意见": "LLM found a sensitive token in the login HTML. Protect the token.",
@@ -1002,6 +1006,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             },
         )
         self.assertEqual(rows[1]["http response"], "Sign in; content_type=text/html")
+        self.assertEqual(rows[1]["CloudAccount"], "")
         self.assertEqual(rows[1]["LLM意见"], "HTTPS endpoint appears to be a login page rather than direct sensitive content.")
         self.assertEqual(rows[1]["Wiz链接"], "")
 

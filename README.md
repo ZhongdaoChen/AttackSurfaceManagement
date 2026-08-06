@@ -112,6 +112,7 @@ python3 assess_attack_surface.py \
 - `host`
 - `port`
 - `cloudPlatform`
+- `cloudAccountName`
 - `exposureLevel`
 - `check_id`
 - `risk_level`
@@ -127,6 +128,7 @@ python3 assess_attack_surface.py \
 - `Wiz链接`
 - `端口号`
 - `cloudPlatform`
+- `CloudAccount`
 - `http状态码`
 - `http response`
 - `LLM意见`
