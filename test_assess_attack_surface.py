@@ -155,6 +155,44 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["subscription"], "adidas-linked-bam-pro-cn")
 
+    def test_non_standard_open_port_for_cicdtools_prod_is_low_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "cicd-proxy.tools.adidas.com.cn",
+            "port": 22,
+            "protocols": ["SSH"],
+            "portStatus": "OPEN",
+            "cloudAccount": {"name": "Cicdtools-prod"},
+        }
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "Cicdtools-prod")
+
+    def test_non_standard_open_port_for_odp_china_account_is_low_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 22,
+            "protocols": ["SSH"],
+            "portStatus": "OPEN",
+            "cloudAccount": {"name": "ODP-China-account"},
+        }
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "ODP-China-account")
+
     def test_non_standard_open_port_https_sensitive_content_is_high_risk(self):
         endpoint = {
             "id": "endpoint-1",
