@@ -1158,7 +1158,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertTrue(args.enable_llm)
 
     def test_arg_parser_allows_disabling_insecure_tls_and_llm(self):
-        args = asm.build_arg_parser().parse_args(["--secure-tls", "--disable-llm"])
+        args = asm.build_arg_parser().parse_args(["--secure-tls", "--disable-llm", "--no-upload-oss"])
 
         self.assertFalse(args.insecure_tls)
         self.assertFalse(args.enable_llm)
@@ -1218,7 +1218,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
             with patch.object(asm, "fetch_url", fetcher):
                 exit_code = asm.main(
-                    ["--input", input_path, "--output", json_path, "--csv-output", csv_path, "--disable-llm"]
+                    ["--input", input_path, "--output", json_path, "--csv-output", csv_path, "--disable-llm", "--no-upload-oss"]
                 )
 
             with open(json_path, encoding="utf-8") as json_file:
@@ -1232,7 +1232,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(csv_rows[0]["endpoint_name"], "https://app.example.com:443")
         self.assertEqual(csv_rows[0]["http状态码"], "200")
 
-    def test_main_uploads_outputs_to_oss_when_requested(self):
+    def test_main_uploads_outputs_to_oss_when_configured(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, "input.jsonl")
             json_path = os.path.join(temp_dir, "findings.jsonl")
@@ -1283,7 +1283,6 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                         "--csv-output",
                         csv_path,
                         "--disable-llm",
-                        "--upload-oss",
                     ]
                 )
 
@@ -1295,6 +1294,81 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual({item[2] for item in uploaded}, {"appsec-asm"})
         self.assertIn(f"Uploading {json_path} to OSS.", status_output.getvalue())
         self.assertIn(f"Uploading {csv_path} to OSS.", status_output.getvalue())
+
+    def test_main_skips_oss_upload_when_disabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, "input.jsonl")
+            json_path = os.path.join(temp_dir, "findings.jsonl")
+            csv_path = os.path.join(temp_dir, "findings.csv")
+            with open(input_path, "w", encoding="utf-8") as input_file:
+                input_file.write(
+                    json.dumps(
+                        {
+                            "id": "endpoint-1",
+                            "name": "https://app.example.com:443",
+                            "host": "app.example.com",
+                            "port": 443,
+                            "protocols": ["HTTPS"],
+                        }
+                    )
+                    + "\n"
+                )
+
+            def fetcher(request, timeout, context=None):
+                return asm.HttpResponse(request.full_url, 200, {"Content-Type": "text/html"}, b"<html>login</html>")
+
+            with (
+                patch.object(asm, "fetch_url", fetcher),
+                patch.dict(os.environ, {"OSS_ENDPOINT": "https://oss-cn-shanghai-internal.aliyuncs.com", "OSS_BUCKET": "appsec-asm"}, clear=False),
+                patch.object(asm.upload_to_oss, "upload_file") as upload_file,
+            ):
+                exit_code = asm.main(
+                    [
+                        "--input",
+                        input_path,
+                        "--output",
+                        json_path,
+                        "--csv-output",
+                        csv_path,
+                        "--disable-llm",
+                        "--no-upload-oss",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        upload_file.assert_not_called()
+
+    def test_main_skips_oss_upload_when_not_configured(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, "input.jsonl")
+            json_path = os.path.join(temp_dir, "findings.jsonl")
+            with open(input_path, "w", encoding="utf-8") as input_file:
+                input_file.write(
+                    json.dumps(
+                        {
+                            "id": "endpoint-1",
+                            "name": "https://app.example.com:443",
+                            "host": "app.example.com",
+                            "port": 443,
+                            "protocols": ["HTTPS"],
+                        }
+                    )
+                    + "\n"
+                )
+
+            def fetcher(request, timeout, context=None):
+                return asm.HttpResponse(request.full_url, 200, {"Content-Type": "text/html"}, b"<html>login</html>")
+
+            with (
+                patch.object(asm, "fetch_url", fetcher),
+                patch.object(asm, "load_dotenv"),
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(asm.upload_to_oss, "upload_file") as upload_file,
+            ):
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm"])
+
+        self.assertEqual(exit_code, 0)
+        upload_file.assert_not_called()
 
     def test_upload_outputs_to_oss_requires_existing_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1346,7 +1420,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             ):
                 os.chdir(temp_dir)
                 try:
-                    exit_code = asm.main(["--input", input_path, "--disable-llm"])
+                    exit_code = asm.main(["--input", input_path, "--disable-llm", "--no-upload-oss"])
                 finally:
                     os.chdir(current_dir)
 
@@ -1396,7 +1470,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(sys, "stderr", status_output),
             ):
-                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm"])
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm", "--no-upload-oss"])
 
         self.assertEqual(exit_code, 0)
         status_lines = status_output.getvalue().splitlines()
@@ -1456,7 +1530,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 ) as fetch_tag_emails,
             ):
                 exit_code = asm.main(
-                    ["--output", json_path, "--csv-output", csv_path, "--limit", "1", "--disable-llm"]
+                    ["--output", json_path, "--csv-output", csv_path, "--limit", "1", "--disable-llm", "--no-upload-oss"]
                 )
 
             with open(json_path, encoding="utf-8") as json_file:
@@ -1520,7 +1594,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm.wiz_auth_poc, "fetch_cloud_account_tag_emails", side_effect=TimeoutError("read timed out")),
                 patch.object(sys, "stderr", status_output),
             ):
-                exit_code = asm.main(["--output", json_path, "--limit", "1", "--disable-llm"])
+                exit_code = asm.main(["--output", json_path, "--limit", "1", "--disable-llm", "--no-upload-oss"])
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]
@@ -1560,7 +1634,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(asm.wiz_auth_poc, "load_config") as load_config,
             ):
-                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm"])
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm", "--no-upload-oss"])
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]

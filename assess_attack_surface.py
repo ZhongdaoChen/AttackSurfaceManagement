@@ -1075,7 +1075,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Disable OpenAI-compatible LLM content judgment.",
     )
     parser.add_argument("--csv-output", help="Output findings CSV file in addition to JSONL output.")
-    parser.add_argument("--upload-oss", action="store_true", help="Upload generated output files to OSS after scanning.")
+    parser.set_defaults(upload_oss=None)
+    parser.add_argument(
+        "--upload-oss",
+        dest="upload_oss",
+        action="store_true",
+        help="Upload generated output files to OSS after scanning.",
+    )
+    parser.add_argument(
+        "--no-upload-oss",
+        dest="upload_oss",
+        action="store_false",
+        help="Disable OSS upload even when OSS environment variables are configured.",
+    )
     return parser
 
 
@@ -1140,10 +1152,17 @@ def main(argv: list[str] | None = None) -> int:
             output.close()
         if csv_output is not None:
             csv_output.close()
-    if args.upload_oss:
+    if should_upload_to_oss(args.upload_oss):
         upload_outputs_to_oss(output_path, csv_output_path)
     print(f"Wrote {count} findings.", file=sys.stderr)
     return 0
+
+
+def should_upload_to_oss(upload_oss_arg: bool | None) -> bool:
+    if upload_oss_arg is not None:
+        return upload_oss_arg
+    load_dotenv()
+    return bool(os.getenv("OSS_ENDPOINT", "").strip() and os.getenv("OSS_BUCKET", "").strip())
 
 
 def upload_outputs_to_oss(output_path: str, csv_output_path: str | None) -> None:
