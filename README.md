@@ -72,6 +72,25 @@ This repository contains a Python-based scanner that exports Wiz Application End
 | `OSS_PREFIX` | 否 | `asm-findings/` | 上传到 bucket 内的路径前缀 |
 | `OSS_ROLE_NAME` | 否 | 自动从 ECS metadata 发现 | ECS 绑定的 RAM Role 名称 |
 
+### RDS PostgreSQL 写入（可选）
+
+如果配置了 RDS 变量，扫描器会在写 JSONL/CSV 的同时，把每条 finding 写入 PostgreSQL：
+
+| 变量 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `RDS_HOST` | 是 | 无 | RDS PostgreSQL 地址 |
+| `RDS_PORT` | 否 | `5432` | RDS PostgreSQL 端口 |
+| `RDS_DB` | 是 | 无 | 数据库名，例如 `AppSec_ASM` |
+| `RDS_USER` | 是 | 无 | 数据库用户名 |
+| `RDS_PASSWORD` | 是 | 无 | 数据库密码 |
+| `RDS_SSLMODE` | 否 | `prefer` | PostgreSQL SSL mode |
+
+ECS 上需要安装 Python PostgreSQL 驱动：
+
+```bash
+pip3 install "psycopg[binary]"
+```
+
 ## 常用命令
 
 ### 1. 检查 Wiz 认证和 GraphQL 连通性

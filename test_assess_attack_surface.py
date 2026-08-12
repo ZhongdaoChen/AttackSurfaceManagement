@@ -1196,7 +1196,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertTrue(args.enable_llm)
 
     def test_arg_parser_allows_disabling_insecure_tls_and_llm(self):
-        args = asm.build_arg_parser().parse_args(["--secure-tls", "--disable-llm", "--no-upload-oss"])
+        args = asm.build_arg_parser().parse_args(["--secure-tls", "--disable-llm", "--no-upload-oss", "--no-rds"])
 
         self.assertFalse(args.insecure_tls)
         self.assertFalse(args.enable_llm)
@@ -1256,7 +1256,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
             with patch.object(asm, "fetch_url", fetcher):
                 exit_code = asm.main(
-                    ["--input", input_path, "--output", json_path, "--csv-output", csv_path, "--disable-llm", "--no-upload-oss"]
+                    ["--input", input_path, "--output", json_path, "--csv-output", csv_path, "--disable-llm", "--no-upload-oss", "--no-rds"]
                 )
 
             with open(json_path, encoding="utf-8") as json_file:
@@ -1300,12 +1300,29 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
             uploaded = []
             status_output = StringIO()
+            rds_writes = []
+
+            class FakeRdsWriter:
+                def write(self, item):
+                    rds_writes.append(item)
+
+                def close(self):
+                    rds_writes.append("closed")
+
             with (
                 patch.object(asm, "fetch_url", fetcher),
+                patch.object(asm.rds_writer, "open_writer", return_value=FakeRdsWriter()) as open_writer,
                 patch.object(asm.upload_to_oss, "load_dotenv") as load_dotenv,
                 patch.dict(
                     os.environ,
-                    {"OSS_ENDPOINT": "https://oss-cn-shanghai-internal.aliyuncs.com", "OSS_BUCKET": "appsec-asm"},
+                    {
+                        "OSS_ENDPOINT": "https://oss-cn-shanghai-internal.aliyuncs.com",
+                        "OSS_BUCKET": "appsec-asm",
+                        "RDS_HOST": "rds.example.com",
+                        "RDS_DB": "asm",
+                        "RDS_USER": "writer",
+                        "RDS_PASSWORD": "secret",
+                    },
                     clear=False,
                 ),
                 patch.object(asm.upload_to_oss, "fetch_role_credentials", return_value={"AccessKeyId": "id", "AccessKeySecret": "secret", "SecurityToken": "token"}) as fetch_credentials,
@@ -1332,6 +1349,9 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual({item[2] for item in uploaded}, {"appsec-asm"})
         self.assertIn(f"Uploading {json_path} to OSS.", status_output.getvalue())
         self.assertIn(f"Uploading {csv_path} to OSS.", status_output.getvalue())
+        open_writer.assert_called_once()
+        self.assertEqual(rds_writes[-1], "closed")
+        self.assertEqual(rds_writes[0]["endpoint_name"], "https://app.example.com:443")
 
     def test_main_skips_oss_upload_when_disabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1370,6 +1390,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                         csv_path,
                         "--disable-llm",
                         "--no-upload-oss",
+                        "--no-rds",
                     ]
                 )
 
@@ -1458,7 +1479,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             ):
                 os.chdir(temp_dir)
                 try:
-                    exit_code = asm.main(["--input", input_path, "--disable-llm", "--no-upload-oss"])
+                    exit_code = asm.main(["--input", input_path, "--disable-llm", "--no-upload-oss", "--no-rds"])
                 finally:
                     os.chdir(current_dir)
 
@@ -1508,7 +1529,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(sys, "stderr", status_output),
             ):
-                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm", "--no-upload-oss"])
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm", "--no-upload-oss", "--no-rds"])
 
         self.assertEqual(exit_code, 0)
         status_lines = status_output.getvalue().splitlines()
@@ -1568,7 +1589,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 ) as fetch_tag_emails,
             ):
                 exit_code = asm.main(
-                    ["--output", json_path, "--csv-output", csv_path, "--limit", "1", "--disable-llm", "--no-upload-oss"]
+                    ["--output", json_path, "--csv-output", csv_path, "--limit", "1", "--disable-llm", "--no-upload-oss", "--no-rds"]
                 )
 
             with open(json_path, encoding="utf-8") as json_file:
@@ -1632,7 +1653,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm.wiz_auth_poc, "fetch_cloud_account_tag_emails", side_effect=TimeoutError("read timed out")),
                 patch.object(sys, "stderr", status_output),
             ):
-                exit_code = asm.main(["--output", json_path, "--limit", "1", "--disable-llm", "--no-upload-oss"])
+                exit_code = asm.main(["--output", json_path, "--limit", "1", "--disable-llm", "--no-upload-oss", "--no-rds"])
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]
@@ -1672,7 +1693,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 patch.object(asm, "fetch_url", fetcher),
                 patch.object(asm.wiz_auth_poc, "load_config") as load_config,
             ):
-                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm", "--no-upload-oss"])
+                exit_code = asm.main(["--input", input_path, "--output", json_path, "--disable-llm", "--no-upload-oss", "--no-rds"])
 
             with open(json_path, encoding="utf-8") as json_file:
                 json_rows = [json.loads(line) for line in json_file if line.strip()]

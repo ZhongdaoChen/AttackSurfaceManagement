@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator, Protocol, TextIO
 
 import upload_to_oss
+import rds_writer
 import wiz_auth_poc
 
 
@@ -791,6 +792,16 @@ def csv_row_for_finding(finding_item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def rds_row_for_finding(finding_item: dict[str, Any]) -> dict[str, Any]:
+    csv_row = csv_row_for_finding(finding_item)
+    return {
+        **finding_item,
+        "wiz_link": csv_row["Wiz链接"],
+        "http_response": csv_row["http response"],
+        "llm_opinion": csv_row["LLM意见"],
+    }
+
+
 def csv_http_response_summary(finding_item: dict[str, Any], details: dict[str, Any]) -> str:
     if finding_item.get("check_id") == "llm_sensitive_content":
         return str(finding_item.get("evidence") or details.get("reason") or "")
@@ -1090,6 +1101,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Disable OSS upload even when OSS environment variables are configured.",
     )
+    parser.set_defaults(write_rds=None)
+    parser.add_argument(
+        "--write-rds",
+        dest="write_rds",
+        action="store_true",
+        help="Write findings to RDS PostgreSQL after each JSONL/CSV row.",
+    )
+    parser.add_argument(
+        "--no-rds",
+        dest="write_rds",
+        action="store_false",
+        help="Disable RDS writes even when RDS environment variables are configured.",
+    )
     return parser
 
 
@@ -1128,9 +1152,16 @@ def main(argv: list[str] | None = None) -> int:
 
     count = 0
     output_path, csv_output_path = resolve_output_paths(args)
+    started_at = datetime.datetime.now(datetime.UTC).isoformat()
+    scan_id = os.path.splitext(os.path.basename(output_path))[0] if output_path != "-" else rds_writer.default_scan_id()
     output = sys.stdout if output_path == "-" else open(output_path, "w", encoding="utf-8")
     csv_output = open(csv_output_path, "w", encoding="utf-8", newline="") if csv_output_path else None
     csv_writer = CsvFindingWriter(csv_output) if csv_output is not None else None
+    db_writer = (
+        rds_writer.open_writer(scan_id, started_at, None if output_path == "-" else output_path, LOW_RISK_SUBSCRIPTIONS)
+        if should_write_to_rds(args.write_rds)
+        else None
+    )
     try:
         for index, endpoint in enumerate(iter_input_endpoints(), start=1):
             if args.limit and index > args.limit:
@@ -1142,6 +1173,8 @@ def main(argv: list[str] | None = None) -> int:
                 count += 1
                 if csv_writer is not None:
                     csv_writer.write(item)
+                if db_writer is not None:
+                    db_writer.write(rds_row_for_finding(item))
             endpoint_name = endpoint.get("name") or endpoint.get("host") or endpoint.get("id") or "<unknown>"
             print(
                 f"Processed endpoint {index}: {endpoint_name} ({len(endpoint_findings)} findings, {count} findings total).",
@@ -1154,6 +1187,8 @@ def main(argv: list[str] | None = None) -> int:
             output.close()
         if csv_output is not None:
             csv_output.close()
+        if db_writer is not None:
+            db_writer.close()
     if should_upload_to_oss(args.upload_oss):
         upload_outputs_to_oss(output_path, csv_output_path)
     print(f"Wrote {count} findings.", file=sys.stderr)
@@ -1165,6 +1200,13 @@ def should_upload_to_oss(upload_oss_arg: bool | None) -> bool:
         return upload_oss_arg
     load_dotenv()
     return bool(os.getenv("OSS_ENDPOINT", "").strip() and os.getenv("OSS_BUCKET", "").strip())
+
+
+def should_write_to_rds(write_rds_arg: bool | None) -> bool:
+    if write_rds_arg is not None:
+        return write_rds_arg
+    load_dotenv()
+    return rds_writer.rds_configured()
 
 
 def upload_outputs_to_oss(output_path: str, csv_output_path: str | None) -> None:
