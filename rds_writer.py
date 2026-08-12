@@ -34,9 +34,15 @@ def connection_info() -> str:
 
     def fmt(k: str, v: str) -> str:
         s = str(v)
-        # Quote values containing spaces so the resulting string is unambiguous
-        # when inspected by humans or tools.
-        return f"{k}='{s}'" if " " in s else f"{k}={s}"
+        # Escape backslashes and single quotes per libpq connection-string rules:
+        # backslashes and single quotes inside a value must be backslash-escaped.
+        # Quote the value if it contains spaces, single quotes, or backslashes
+        # so psycopg/libpq will parse it unambiguously.
+        needs_quote = any(ch in s for ch in (" ", "'", "\\"))
+        if needs_quote:
+            escaped = s.replace("\\", "\\\\").replace("'", "\\'")
+            return f"{k}='{escaped}'"
+        return f"{k}={s}"
 
     return " ".join(fmt(k, v) for k, v in pairs)
 
