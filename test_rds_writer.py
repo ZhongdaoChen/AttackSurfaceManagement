@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import rds_writer
@@ -42,6 +43,19 @@ class RdsWriterTests(unittest.TestCase):
         finding = {"details": {"subscription": "FDP"}}
 
         self.assertTrue(rds_writer.is_whitelisted_finding(finding, {"fdp"}))
+
+    def test_schema_defines_current_findings_table(self):
+        schema = Path("schema.sql").read_text(encoding="utf-8")
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS asm_current_findings", schema)
+        self.assertIn("finding_key TEXT PRIMARY KEY", schema)
+        self.assertIn("first_seen_scan_id TEXT NOT NULL REFERENCES asm_scans(scan_id)", schema)
+        self.assertIn("last_seen_scan_id TEXT NOT NULL REFERENCES asm_scans(scan_id)", schema)
+        self.assertIn("seen_count INTEGER NOT NULL DEFAULT 1", schema)
+        self.assertIn("resolved_at TIMESTAMPTZ", schema)
+        self.assertIn("resolved_scan_id TEXT REFERENCES asm_scans(scan_id)", schema)
+        self.assertIn("idx_asm_current_findings_active", schema)
+        self.assertIn("idx_asm_current_findings_resolved_at", schema)
 
     def test_writer_inserts_scan_and_finding_rows(self):
         connection = FakeConnection()
@@ -89,6 +103,18 @@ class RdsWriterTests(unittest.TestCase):
         self.assertEqual(finding_params["details"], json.dumps({"status": 200}, ensure_ascii=False))
         self.assertEqual(finding_params["raw"], json.dumps(finding, ensure_ascii=False))
         self.assertFalse(finding_params["whitelisted"])
+
+    def test_connect_missing_psycopg_points_to_requirements_install(self):
+        def fake_import(name, *args, **kwargs):
+            if name == "psycopg":
+                raise ImportError("No module named 'psycopg'")
+            return original_import(name, *args, **kwargs)
+
+        original_import = __import__
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            with self.assertRaisesRegex(RuntimeError, "pip3 install -r requirements.txt"):
+                rds_writer.connect()
 
 
 if __name__ == "__main__":

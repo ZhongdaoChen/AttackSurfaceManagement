@@ -78,3 +78,66 @@ CREATE INDEX IF NOT EXISTS idx_asm_findings_details
 
 CREATE INDEX IF NOT EXISTS idx_asm_findings_raw
   ON asm_findings USING GIN(raw);
+
+CREATE TABLE IF NOT EXISTS asm_current_findings (
+  finding_key TEXT PRIMARY KEY,
+
+  endpoint_id TEXT,
+  endpoint_name TEXT,
+  wiz_link TEXT,
+  host TEXT,
+  port INTEGER,
+
+  cloud_platform TEXT,
+  cloud_account_name TEXT,
+  tag_emails TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  exposure_level TEXT,
+
+  check_id TEXT,
+  risk_level TEXT,
+  whitelisted BOOLEAN NOT NULL DEFAULT FALSE,
+
+  http_status TEXT,
+  http_response TEXT,
+  llm_opinion TEXT,
+
+  evidence TEXT,
+  recommendation TEXT,
+
+  details JSONB NOT NULL DEFAULT '{}'::JSONB,
+  raw JSONB NOT NULL,
+
+  first_seen_scan_id TEXT NOT NULL REFERENCES asm_scans(scan_id),
+  first_seen_at TIMESTAMPTZ NOT NULL,
+  last_seen_scan_id TEXT NOT NULL REFERENCES asm_scans(scan_id),
+  last_seen_at TIMESTAMPTZ NOT NULL,
+  seen_count INTEGER NOT NULL DEFAULT 1,
+  resolved_at TIMESTAMPTZ,
+  resolved_scan_id TEXT REFERENCES asm_scans(scan_id),
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_active
+  ON asm_current_findings(resolved_at)
+  WHERE resolved_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_resolved_at
+  ON asm_current_findings(resolved_at)
+  WHERE resolved_at IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_risk_level
+  ON asm_current_findings(risk_level);
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_whitelisted
+  ON asm_current_findings(whitelisted);
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_endpoint_id
+  ON asm_current_findings(endpoint_id);
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_host
+  ON asm_current_findings(host);
+
+CREATE INDEX IF NOT EXISTS idx_asm_current_findings_cloud_account_name
+  ON asm_current_findings(cloud_account_name);
