@@ -265,6 +265,59 @@ class RdsWriterTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "pip3 install -r requirements.txt"):
                 rds_writer.connect()
 
+    def test_build_teams_high_risk_card_uses_top_level_adaptive_card(self):
+        findings = [
+            {
+                "endpoint_name": "https://app.example.com:9200",
+                "wiz_link": "https://app.wiz.io/example",
+                "host": "app.example.com",
+                "port": 9200,
+                "cloud_account_name": "Account One",
+                "check_id": "non_standard_open_port",
+                "evidence": "Open non-standard internet-facing port 9200.",
+                "recommendation": "Close or restrict the port.",
+                "first_seen_scan_id": "scan-1",
+                "first_seen_at": "2026-08-12T11:20:00+08:00",
+            }
+        ]
+
+        card = rds_writer.build_teams_high_risk_card("scan-1", findings)
+
+        self.assertEqual(card["type"], "AdaptiveCard")
+        self.assertEqual(card["version"], "1.4")
+        self.assertEqual(card["body"][0]["text"], "ASM 新增 High Risk 告警")
+        self.assertIn("本次扫描发现 1 个新增 High Risk endpoint。", card["body"][1]["text"])
+        self.assertEqual(card["actions"][0]["type"], "Action.OpenUrl")
+        self.assertEqual(card["actions"][0]["url"], "https://app.wiz.io/example")
+
+    def test_build_teams_high_risk_card_limits_and_truncates_findings(self):
+        long_text = "x" * 350
+        findings = [
+            {
+                "endpoint_name": f"https://app-{index}.example.com:9200",
+                "host": f"app-{index}.example.com",
+                "port": 9200,
+                "cloud_account_name": "Account One",
+                "check_id": "non_standard_open_port",
+                "evidence": long_text,
+                "recommendation": long_text,
+                "first_seen_scan_id": "scan-1",
+                "first_seen_at": "2026-08-12T11:20:00+08:00",
+            }
+            for index in range(11)
+        ]
+
+        card = rds_writer.build_teams_high_risk_card("scan-1", findings)
+
+        self.assertIn("仅展示前 10 个", card["body"][1]["text"])
+        finding_titles = [block for block in card["body"] if block.get("weight") == "Bolder" and block.get("separator")]
+        self.assertEqual(len(finding_titles), 10)
+        fact_sets = [block for block in card["body"] if block.get("type") == "FactSet"]
+        evidence_fact = fact_sets[1]["facts"][4]
+        self.assertEqual(evidence_fact["title"], "Evidence")
+        self.assertTrue(evidence_fact["value"].endswith("..."))
+        self.assertLessEqual(len(evidence_fact["value"]), 300)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -103,6 +103,88 @@ def default_scan_id(now: datetime.datetime | None = None) -> str:
     return value.strftime("%Y%m%d-%H%M%S")
 
 
+TEAMS_CARD_MAX_FINDINGS = 10
+TEAMS_CARD_TEXT_LIMIT = 300
+
+
+def truncate_text(value: Any, limit: int = TEAMS_CARD_TEXT_LIMIT) -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
+def finding_heading(finding: dict[str, Any]) -> str:
+    endpoint_name = str(finding.get("endpoint_name") or "").strip()
+    if endpoint_name:
+        return endpoint_name
+    host = str(finding.get("host") or "").strip()
+    port = finding.get("port")
+    if host and port:
+        return f"{host}:{port}"
+    endpoint_id = str(finding.get("endpoint_id") or "").strip()
+    return endpoint_id or "<unknown endpoint>"
+
+
+def build_teams_high_risk_card(scan_id: str, findings: list[dict[str, Any]]) -> dict[str, Any]:
+    displayed_findings = findings[:TEAMS_CARD_MAX_FINDINGS]
+    summary = f"本次扫描发现 {len(findings)} 个新增 High Risk endpoint。"
+    if len(findings) > TEAMS_CARD_MAX_FINDINGS:
+        summary += f" 仅展示前 {TEAMS_CARD_MAX_FINDINGS} 个。"
+    first_seen = str(displayed_findings[0].get("first_seen_at") or "") if displayed_findings else ""
+    body: list[dict[str, Any]] = [
+        {
+            "type": "TextBlock",
+            "text": "ASM 新增 High Risk 告警",
+            "weight": "Bolder",
+            "size": "Large",
+            "color": "Attention",
+        },
+        {"type": "TextBlock", "text": summary, "wrap": True},
+        {
+            "type": "FactSet",
+            "facts": [
+                {"title": "Scan ID", "value": scan_id},
+                {"title": "First seen", "value": first_seen},
+                {"title": "Total", "value": str(len(findings))},
+            ],
+        },
+    ]
+    for index, finding in enumerate(displayed_findings, start=1):
+        body.append(
+            {
+                "type": "TextBlock",
+                "text": f"{index}. {finding_heading(finding)}",
+                "weight": "Bolder",
+                "wrap": True,
+                "separator": True,
+            }
+        )
+        body.append(
+            {
+                "type": "FactSet",
+                "facts": [
+                    {"title": "Host", "value": str(finding.get("host") or "")},
+                    {"title": "Port", "value": str(finding.get("port") or "")},
+                    {"title": "CloudAccount", "value": str(finding.get("cloud_account_name") or "")},
+                    {"title": "Check", "value": str(finding.get("check_id") or "")},
+                    {"title": "Evidence", "value": truncate_text(finding.get("evidence"))},
+                    {"title": "Recommendation", "value": truncate_text(finding.get("recommendation"))},
+                ],
+            }
+        )
+    card: dict[str, Any] = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": body,
+    }
+    first_wiz_link = str(displayed_findings[0].get("wiz_link") or "").strip() if displayed_findings else ""
+    if first_wiz_link:
+        card["actions"] = [{"type": "Action.OpenUrl", "title": "Open first finding in Wiz", "url": first_wiz_link}]
+    return card
+
+
 class RdsFindingWriter:
     def __init__(
         self,
