@@ -1300,14 +1300,17 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
             uploaded = []
             status_output = StringIO()
-            rds_writes = []
+            rds_events = []
 
             class FakeRdsWriter:
                 def write(self, item):
-                    rds_writes.append(item)
+                    rds_events.append(("write", item))
+
+                def finalize(self):
+                    rds_events.append(("finalize", None))
 
                 def close(self):
-                    rds_writes.append("closed")
+                    rds_events.append(("close", None))
 
             with (
                 patch.object(asm, "fetch_url", fetcher),
@@ -1350,8 +1353,8 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertIn(f"Uploading {json_path} to OSS.", status_output.getvalue())
         self.assertIn(f"Uploading {csv_path} to OSS.", status_output.getvalue())
         open_writer.assert_called_once()
-        self.assertEqual(rds_writes[-1], "closed")
-        self.assertEqual(rds_writes[0]["endpoint_name"], "https://app.example.com:443")
+        self.assertEqual([event for event, _item in rds_events], ["write", "finalize", "close"])
+        self.assertEqual(rds_events[0][1]["endpoint_name"], "https://app.example.com:443")
 
     def test_main_skips_oss_upload_when_disabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:

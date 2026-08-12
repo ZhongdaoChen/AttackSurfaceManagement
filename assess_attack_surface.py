@@ -1182,6 +1182,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         if csv_writer is not None:
             csv_writer.flush_remaining()
+        if db_writer is not None:
+            db_writer.finalize()
     finally:
         if output is not sys.stdout:
             output.close()
