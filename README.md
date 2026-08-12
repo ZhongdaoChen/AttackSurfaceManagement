@@ -32,7 +32,7 @@ This repository contains a Python-based scanner that exports Wiz Application End
 - 可访问 Wiz API。
 - 如需 LLM 判断，需要 OpenAI-compatible API key，例如 DashScope/Qwen。
 
-本项目只使用 Python 标准库；如果系统 CA 证书不可用，代码会尝试使用 `certifi`。
+核心扫描逻辑只使用 Python 标准库；如果系统 CA 证书不可用，代码会尝试使用 `certifi`。启用 RDS PostgreSQL 写入时，需要安装 `requirements.txt` 中的 PostgreSQL 驱动。
 
 ## 环境变量
 
@@ -88,7 +88,7 @@ This repository contains a Python-based scanner that exports Wiz Application End
 ECS 上需要安装 Python PostgreSQL 驱动：
 
 ```bash
-pip3 install "psycopg[binary]"
+pip3 install -r requirements.txt
 ```
 
 ## 常用命令
