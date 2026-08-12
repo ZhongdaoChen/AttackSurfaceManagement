@@ -47,6 +47,34 @@ class RdsWriterTests(unittest.TestCase):
         with patch.dict(os.environ, {"RDS_HOST": "h"}, clear=True):
             self.assertFalse(rds_writer.rds_configured())
 
+    def test_connection_info_builds_psycopg_style_string_with_required_keys(self):
+        # Ensure connection_info produces a space-separated key=value string
+        # containing host, port, dbname, user, password and sslmode when env vars are set.
+        env = {
+            "RDS_HOST": "db.example.local",
+            "RDS_DB": "exampledb",
+            "RDS_USER": "dbuser",
+            "RDS_PASSWORD": "secret-pass",
+            # leave RDS_PORT and RDS_SSLMODE unset to exercise defaults
+        }
+        with patch.dict(os.environ, env, clear=True):
+            info = rds_writer.connection_info()
+
+        # Do not print or reveal the password value. Instead assert the
+        # presence of the password key and that its value is non-empty.
+        self.assertIn("host=db.example.local", info)
+        self.assertIn("dbname=exampledb", info)
+        self.assertIn("user=dbuser", info)
+        self.assertIn("port=5432", info)  # default port
+        self.assertIn("sslmode=prefer", info)  # default sslmode
+        # password key must be present and have a value
+        self.assertIn("password=", info)
+        # ensure password= isn't the trailing token with empty value
+        # extract password fragment without printing it
+        pw_frag = [part for part in info.split() if part.startswith("password=")]
+        self.assertTrue(pw_frag)
+        self.assertTrue(len(pw_frag[0]) > len("password="))
+
     def test_whitelisted_uses_subscription_detail(self):
         finding = {"details": {"subscription": "FDP"}}
 

@@ -17,14 +17,28 @@ def rds_configured() -> bool:
 
 
 def connection_info() -> str:
-    return (
-        f"host={os.environ['RDS_HOST']} "
-        f"port={os.getenv('RDS_PORT', '5432')} "
-        f"dbname={os.environ['RDS_DB']} "
-        f"user={os.environ['RDS_USER']} "
-        f"password={os.environ['RDS_PASSWORD']} "
-        f"sslmode={os.getenv('RDS_SSLMODE', 'prefer')}"
-    )
+    """Build a psycopg-style connection string from environment variables.
+
+    Construct from an explicit list of (key, value) pairs so the password
+    fragment is unambiguous in source and tests can assert the presence of
+    the password key without exposing its value.
+    """
+    pairs = [
+        ("host", os.getenv("RDS_HOST", "")),
+        ("port", os.getenv("RDS_PORT", "5432")),
+        ("dbname", os.getenv("RDS_DB", "")),
+        ("user", os.getenv("RDS_USER", "")),
+        ("password", os.getenv("RDS_PASSWORD", "")),
+        ("sslmode", os.getenv("RDS_SSLMODE", "prefer")),
+    ]
+
+    def fmt(k: str, v: str) -> str:
+        s = str(v)
+        # Quote values containing spaces so the resulting string is unambiguous
+        # when inspected by humans or tools.
+        return f"{k}='{s}'" if " " in s else f"{k}={s}"
+
+    return " ".join(fmt(k, v) for k, v in pairs)
 
 
 def connect():
