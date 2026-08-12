@@ -41,6 +41,16 @@ def is_whitelisted_finding(finding: dict[str, Any], low_risk_subscriptions: set[
     return bool(subscription and subscription in low_risk_subscriptions)
 
 
+def strip_nul_bytes(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, list):
+        return [strip_nul_bytes(item) for item in value]
+    if isinstance(value, dict):
+        return {key: strip_nul_bytes(item) for key, item in value.items()}
+    return value
+
+
 def finding_key(params: dict[str, Any]) -> str:
     port = params.get("port")
     key_parts = [
@@ -58,30 +68,31 @@ def finding_insert_params(
     scan_id: str,
     low_risk_subscriptions: set[str],
 ) -> dict[str, Any]:
-    details = finding.get("details")
+    clean_finding = strip_nul_bytes(finding)
+    details = clean_finding.get("details")
     if not isinstance(details, dict):
         details = {}
     params = {
         "scan_id": scan_id,
-        "endpoint_id": finding.get("endpoint_id"),
-        "endpoint_name": finding.get("endpoint_name"),
-        "wiz_link": finding.get("wiz_link"),
-        "host": finding.get("host"),
-        "port": finding.get("port"),
-        "cloud_platform": finding.get("cloudPlatform"),
-        "cloud_account_name": finding.get("cloudAccountName"),
-        "tag_emails": finding.get("tagEmails") if isinstance(finding.get("tagEmails"), list) else [],
-        "exposure_level": finding.get("exposureLevel"),
-        "check_id": finding.get("check_id"),
-        "risk_level": finding.get("risk_level"),
-        "whitelisted": is_whitelisted_finding(finding, low_risk_subscriptions),
+        "endpoint_id": clean_finding.get("endpoint_id"),
+        "endpoint_name": clean_finding.get("endpoint_name"),
+        "wiz_link": clean_finding.get("wiz_link"),
+        "host": clean_finding.get("host"),
+        "port": clean_finding.get("port"),
+        "cloud_platform": clean_finding.get("cloudPlatform"),
+        "cloud_account_name": clean_finding.get("cloudAccountName"),
+        "tag_emails": clean_finding.get("tagEmails") if isinstance(clean_finding.get("tagEmails"), list) else [],
+        "exposure_level": clean_finding.get("exposureLevel"),
+        "check_id": clean_finding.get("check_id"),
+        "risk_level": clean_finding.get("risk_level"),
+        "whitelisted": is_whitelisted_finding(clean_finding, low_risk_subscriptions),
         "http_status": str(details.get("http_status") or details.get("status") or "") or None,
-        "http_response": finding.get("http_response"),
-        "llm_opinion": finding.get("llm_opinion"),
-        "evidence": finding.get("evidence"),
-        "recommendation": finding.get("recommendation"),
+        "http_response": clean_finding.get("http_response"),
+        "llm_opinion": clean_finding.get("llm_opinion"),
+        "evidence": clean_finding.get("evidence"),
+        "recommendation": clean_finding.get("recommendation"),
         "details": json.dumps(details, ensure_ascii=False),
-        "raw": json.dumps(finding, ensure_ascii=False),
+        "raw": json.dumps(clean_finding, ensure_ascii=False),
     }
     params["finding_key"] = finding_key(params)
     return params

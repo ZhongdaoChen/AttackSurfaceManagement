@@ -92,6 +92,37 @@ class RdsWriterTests(unittest.TestCase):
         self.assertEqual(params["endpoint_id"], "endpoint-1")
         self.assertEqual(params["http_status"], "200")
 
+    def test_finding_insert_params_strip_nul_bytes_from_postgres_text_values(self):
+        finding = {
+            "endpoint_id": "endpoint-\x001",
+            "endpoint_name": "https://app.example.com:443\x00",
+            "host": "app.example.com",
+            "port": 443,
+            "cloudPlatform": "AWS",
+            "cloudAccountName": "Account\x00 One",
+            "tagEmails": ["owner\x00@example.com"],
+            "check_id": "llm_sensitive_content",
+            "risk_level": "high",
+            "evidence": "secret\x00value",
+            "recommendation": "remove\x00secret",
+            "http_response": "title\x00text",
+            "llm_opinion": "reason\x00text",
+            "details": {"status": 200, "title": "bad\x00title", "items": ["a\x00b"]},
+        }
+
+        params = rds_writer.finding_insert_params(finding, "scan-1", {"fdp"})
+
+        for key, value in params.items():
+            if isinstance(value, str):
+                self.assertNotIn("\x00", value, key)
+            elif isinstance(value, list):
+                for item in value:
+                    self.assertNotIn("\x00", item, key)
+        self.assertNotIn("\\u0000", params["details"])
+        self.assertNotIn("\\u0000", params["raw"])
+        self.assertEqual(params["endpoint_id"], "endpoint-1")
+        self.assertEqual(params["tag_emails"], ["owner@example.com"])
+
     def test_writer_upserts_current_finding_after_history_insert(self):
         connection = FakeConnection()
         finding = {
