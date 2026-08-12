@@ -1356,6 +1356,72 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual([event for event, _item in rds_events], ["write", "finalize", "close"])
         self.assertEqual(rds_events[0][1]["endpoint_name"], "https://app.example.com:443")
 
+    def test_main_loads_dotenv_for_input_rds_scans_before_finalize(self):
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, "input.jsonl")
+            json_path = os.path.join(temp_dir, "findings.jsonl")
+            with open(os.path.join(temp_dir, ".env"), "w", encoding="utf-8") as dotenv:
+                dotenv.write("TEAMS_WEBHOOK_URL=https://teams.example/webhook\n")
+            with open(input_path, "w", encoding="utf-8") as input_file:
+                input_file.write(
+                    json.dumps(
+                        {
+                            "id": "endpoint-1",
+                            "name": "https://app.example.com:443",
+                            "host": "app.example.com",
+                            "port": 443,
+                            "protocols": ["HTTPS"],
+                            "cloudPlatform": "AWS",
+                        }
+                    )
+                    + "\n"
+                )
+
+            def fetcher(request, timeout, context=None):
+                return asm.HttpResponse(
+                    url=request.full_url,
+                    status=200,
+                    headers={"Content-Type": "text/html"},
+                    body=b"<html><title>Welcome</title><p>Public page</p></html>",
+                )
+
+            observed_webhook_urls = []
+
+            class FakeRdsWriter:
+                def write(self, item):
+                    pass
+
+                def finalize(self):
+                    observed_webhook_urls.append(os.getenv("TEAMS_WEBHOOK_URL"))
+
+                def close(self):
+                    pass
+
+            try:
+                os.chdir(temp_dir)
+                with (
+                    patch.object(asm, "fetch_url", fetcher),
+                    patch.object(asm.rds_writer, "open_writer", return_value=FakeRdsWriter()),
+                    patch.dict(os.environ, {}, clear=True),
+                ):
+                    exit_code = asm.main(
+                        [
+                            "--input",
+                            input_path,
+                            "--output",
+                            json_path,
+                            "--disable-llm",
+                            "--no-upload-oss",
+                            "--write-rds",
+                        ]
+                    )
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(observed_webhook_urls, ["https://teams.example/webhook"])
+
     def test_main_skips_oss_upload_when_disabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = os.path.join(temp_dir, "input.jsonl")

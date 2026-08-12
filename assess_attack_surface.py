@@ -1130,6 +1130,7 @@ def resolve_output_paths(args: argparse.Namespace, now: datetime.datetime | None
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    load_dotenv()
     llm_client = OpenAICompatibleClient(timeout_seconds=args.timeout) if args.enable_llm else None
     context = CheckContext(
         timeout_seconds=args.timeout,
