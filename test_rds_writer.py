@@ -8,16 +8,19 @@ import rds_writer
 
 
 class FakeCursor:
-    def __init__(self):
+    def __init__(self, rowcounts=None):
         self.executions = []
+        self.rowcounts = list(rowcounts or [])
+        self.rowcount = 1
 
     def execute(self, sql, params=None):
         self.executions.append((sql, params))
+        self.rowcount = self.rowcounts.pop(0) if self.rowcounts else 1
 
 
 class FakeConnection:
-    def __init__(self):
-        self.cursor_obj = FakeCursor()
+    def __init__(self, rowcounts=None):
+        self.cursor_obj = FakeCursor(rowcounts=rowcounts)
         self.commits = 0
         self.closed = False
 
@@ -56,6 +59,101 @@ class RdsWriterTests(unittest.TestCase):
         self.assertIn("resolved_scan_id TEXT REFERENCES asm_scans(scan_id)", schema)
         self.assertIn("idx_asm_current_findings_active", schema)
         self.assertIn("idx_asm_current_findings_resolved_at", schema)
+
+    def test_finding_key_normalizes_missing_identity_fields(self):
+        params = {
+            "endpoint_id": None,
+            "check_id": "non_standard_open_port",
+            "host": "app.example.com",
+            "port": None,
+        }
+
+        self.assertEqual(
+            rds_writer.finding_key(params),
+            "b06cee14e86c6a218c0ca7e38685382993f39a45102177928aa51091a62d47f6",
+        )
+
+    def test_finding_insert_params_include_current_finding_key(self):
+        finding = {
+            "endpoint_id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 443,
+            "check_id": "llm_sensitive_content",
+            "details": {"status": 200},
+        }
+
+        params = rds_writer.finding_insert_params(finding, "scan-1", {"fdp"})
+
+        self.assertEqual(
+            params["finding_key"],
+            "b3926d5be171d88300a90e163ae33299566eb55df61039e1cacdadf1c89c74e6",
+        )
+        self.assertEqual(params["scan_id"], "scan-1")
+        self.assertEqual(params["endpoint_id"], "endpoint-1")
+        self.assertEqual(params["http_status"], "200")
+
+    def test_writer_upserts_current_finding_after_history_insert(self):
+        connection = FakeConnection()
+        finding = {
+            "endpoint_id": "endpoint-1",
+            "endpoint_name": "https://app.example.com:443",
+            "host": "app.example.com",
+            "port": 443,
+            "cloudPlatform": "AWS",
+            "cloudAccountName": "Account One",
+            "tagEmails": ["owner@example.com"],
+            "exposureLevel": "HIGH",
+            "check_id": "llm_sensitive_content",
+            "risk_level": "low",
+            "evidence": "No sensitive content",
+            "recommendation": "Keep monitoring.",
+            "wiz_link": "https://app.wiz.io/example",
+            "http_response": "No sensitive content",
+            "llm_opinion": "No sensitive content Keep monitoring.",
+            "details": {"status": 200},
+        }
+
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-12T10:00:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+        writer.write(finding)
+
+        current_sql, current_params = connection.cursor_obj.executions[2]
+        self.assertIn("INSERT INTO asm_current_findings", current_sql)
+        self.assertIn("ON CONFLICT (finding_key) DO UPDATE", current_sql)
+        self.assertIn("seen_count = asm_current_findings.seen_count + 1", current_sql)
+        self.assertIn("resolved_at = NULL", current_sql)
+        self.assertEqual(current_params["scan_id"], "scan-1")
+        self.assertEqual(current_params["started_at"], "2026-08-12T10:00:00+08:00")
+        self.assertEqual(current_params["finding_key"], "b3926d5be171d88300a90e163ae33299566eb55df61039e1cacdadf1c89c74e6")
+
+    def test_writer_skips_current_upsert_when_history_insert_conflicts(self):
+        connection = FakeConnection(rowcounts=[1, 0])
+        finding = {
+            "endpoint_id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 443,
+            "check_id": "llm_sensitive_content",
+            "details": {"status": 200},
+        }
+
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-12T10:00:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+        writer.write(finding)
+
+        executed_sql = [sql for sql, _params in connection.cursor_obj.executions]
+        self.assertEqual(len(executed_sql), 2)
+        self.assertIn("INSERT INTO asm_findings", executed_sql[1])
+        self.assertNotIn("asm_current_findings", "\n".join(executed_sql))
 
     def test_writer_inserts_scan_and_finding_rows(self):
         connection = FakeConnection()
