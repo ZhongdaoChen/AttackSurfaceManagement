@@ -1,5 +1,6 @@
 import json
 import os
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -324,14 +325,20 @@ class RdsWriterTests(unittest.TestCase):
         )
         stderr = StringIO()
 
+        webhook = "https://teams.example/webhook"
         with (
-            patch.dict(os.environ, {"TEAMS_WEBHOOK_URL": "https://teams.example/webhook"}, clear=True),
-            patch.object(rds_writer, "post_teams_webhook", side_effect=RuntimeError("boom")),
+            patch.dict(os.environ, {"TEAMS_WEBHOOK_URL": webhook}, clear=True),
+            # Simulate an error whose message contains the webhook URL. The
+            # finalize() method must not print the raw exception message or
+            # the webhook URL itself.
+            patch.object(rds_writer, "post_teams_webhook", side_effect=RuntimeError(f"boom {webhook}")),
             patch("sys.stderr", stderr),
         ):
             writer.finalize()
 
-        self.assertIn("Teams notification failed: RuntimeError: boom", stderr.getvalue())
+        out = stderr.getvalue()
+        self.assertIn("Teams notification failed: RuntimeError", out)
+        self.assertNotIn(webhook, out)
 
     def test_writer_skips_current_upsert_when_history_insert_conflicts(self):
         connection = FakeConnection(rowcounts=[1, 0])
@@ -435,6 +442,26 @@ class RdsWriterTests(unittest.TestCase):
         with patch("builtins.__import__", side_effect=fake_import):
             with self.assertRaisesRegex(RuntimeError, "pip3 install -r requirements.txt"):
                 rds_writer.connect()
+
+    def test_connect_passes_row_factory_to_psycopg_when_available(self):
+        # Provide a fake psycopg module with a rows.dict_row factory and a
+        # connect() implementation that records kwargs. connect() should
+        # pass row_factory when rows.dict_row exists.
+        fake_rows = types.SimpleNamespace(dict_row=object())
+        recorded = {}
+
+        def fake_connect(conn_info, **kwargs):
+            recorded['conn_info'] = conn_info
+            recorded['kwargs'] = kwargs
+            return 'FAKECONN'
+
+        fake_psycopg = types.SimpleNamespace(rows=fake_rows, connect=fake_connect)
+        with patch.dict('sys.modules', {'psycopg': fake_psycopg}):
+            conn = rds_writer.connect()
+
+        self.assertEqual(conn, 'FAKECONN')
+        self.assertIn('row_factory', recorded['kwargs'])
+        self.assertIs(recorded['kwargs']['row_factory'], fake_rows.dict_row)
 
     def test_build_teams_high_risk_card_uses_top_level_adaptive_card(self):
         findings = [

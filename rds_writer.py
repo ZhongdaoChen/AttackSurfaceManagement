@@ -52,7 +52,26 @@ def connect():
         import psycopg  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError("RDS writing requires psycopg. Install with: pip3 install -r requirements.txt") from exc
-    return psycopg.connect(connection_info())
+
+    # Prefer psycopg v3 row factory which returns dict-like rows. Do a
+    # best-effort lookup so older/newer psycopg variants won't break import
+    # time or runtime. If the rows.dict_row factory is available, pass it
+    # as row_factory to psycopg.connect(). If the connect() implementation
+    # doesn't accept row_factory, fall back to calling without it.
+    row_factory = None
+    rows_module = getattr(psycopg, "rows", None)
+    if rows_module is not None and hasattr(rows_module, "dict_row"):
+        row_factory = rows_module.dict_row
+    try:
+        if row_factory is not None:
+            return psycopg.connect(connection_info(), row_factory=row_factory)
+        return psycopg.connect(connection_info())
+    except TypeError:
+        # Some psycopg compat layers may not accept row_factory; fall back
+        # to a plain connect() call which will return whatever the driver
+        # provides (typically tuples). Callers should handle conversion
+        # if necessary.
+        return psycopg.connect(connection_info())
 
 
 def is_whitelisted_finding(finding: dict[str, Any], low_risk_subscriptions: set[str]) -> bool:
@@ -362,7 +381,10 @@ class RdsFindingWriter:
         try:
             self.notify_new_high_risks()
         except Exception as exc:  # noqa: BLE001 - notification must not fail scans.
-            print(f"Teams notification failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            # Do not include the raw exception message (which may contain
+            # secrets such as the TEAMS_WEBHOOK_URL). Log only the exception
+            # type so failures are visible without leaking sensitive data.
+            print(f"Teams notification failed: {type(exc).__name__}", file=sys.stderr)
 
     def close(self) -> None:
         self.connection.close()
