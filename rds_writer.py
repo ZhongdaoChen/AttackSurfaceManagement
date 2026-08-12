@@ -191,6 +191,20 @@ class RdsFindingWriter:
             params,
         )
 
+    def finalize(self) -> None:
+        self.cursor.execute(
+            """
+            UPDATE asm_current_findings
+            SET resolved_at = %(resolved_at)s,
+                resolved_scan_id = %(scan_id)s,
+                updated_at = now()
+            WHERE last_seen_scan_id <> %(scan_id)s
+              AND resolved_at IS NULL
+            """,
+            {"scan_id": self.scan_id, "resolved_at": self.started_at},
+        )
+        self.connection.commit()
+
     def close(self) -> None:
         self.connection.close()
 

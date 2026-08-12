@@ -155,6 +155,26 @@ class RdsWriterTests(unittest.TestCase):
         self.assertIn("INSERT INTO asm_findings", executed_sql[1])
         self.assertNotIn("asm_current_findings", "\n".join(executed_sql))
 
+    def test_finalize_marks_findings_missing_from_current_scan_as_resolved(self):
+        connection = FakeConnection()
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-2",
+            started_at="2026-08-12T11:00:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+
+        writer.finalize()
+
+        finalize_sql, finalize_params = connection.cursor_obj.executions[1]
+        self.assertIn("UPDATE asm_current_findings", finalize_sql)
+        self.assertIn("last_seen_scan_id <> %(scan_id)s", finalize_sql)
+        self.assertIn("resolved_at IS NULL", finalize_sql)
+        self.assertEqual(finalize_params["scan_id"], "scan-2")
+        self.assertEqual(finalize_params["resolved_at"], "2026-08-12T11:00:00+08:00")
+        self.assertEqual(connection.commits, 2)
+
     def test_writer_inserts_scan_and_finding_rows(self):
         connection = FakeConnection()
         finding = {
