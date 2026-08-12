@@ -319,5 +319,45 @@ class RdsWriterTests(unittest.TestCase):
         self.assertLessEqual(len(evidence_fact["value"]), 300)
 
 
+    def test_build_teams_high_risk_card_omits_actions_when_no_wiz_link(self):
+        # Case 1: wiz_link present but empty
+        findings_empty = [
+            {
+                "endpoint_name": "https://app.example.com:9200",
+                "wiz_link": "",
+                "host": "app.example.com",
+                "port": 9200,
+                "cloud_account_name": "Account One",
+                "check_id": "non_standard_open_port",
+                "evidence": "Open non-standard internet-facing port 9200.",
+                "recommendation": "Close or restrict the port.",
+                "first_seen_scan_id": "scan-1",
+                "first_seen_at": "2026-08-12T11:20:00+08:00",
+            }
+        ]
+
+        card_empty = rds_writer.build_teams_high_risk_card("scan-1", findings_empty)
+        # When the first displayed finding has no wiz_link (empty), the top-level actions key should be omitted
+        self.assertNotIn("actions", card_empty)
+
+        # Case 2: wiz_link key missing entirely
+        findings_missing = [
+            {
+                "endpoint_name": "https://app.example.com:9200",
+                "host": "app.example.com",
+                "port": 9200,
+                "cloud_account_name": "Account One",
+                "check_id": "non_standard_open_port",
+                "evidence": "Open non-standard internet-facing port 9200.",
+                "recommendation": "Close or restrict the port.",
+                "first_seen_scan_id": "scan-1",
+                "first_seen_at": "2026-08-12T11:20:00+08:00",
+            }
+        ]
+
+        card_missing = rds_writer.build_teams_high_risk_card("scan-1", findings_missing)
+        self.assertNotIn("actions", card_missing)
+
+
 if __name__ == "__main__":
     unittest.main()
