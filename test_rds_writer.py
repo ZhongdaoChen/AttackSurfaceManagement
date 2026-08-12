@@ -3,24 +3,29 @@ import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from io import StringIO
 
 import rds_writer
 
 
 class FakeCursor:
-    def __init__(self, rowcounts=None):
+    def __init__(self, rowcounts=None, result_rows=None):
         self.executions = []
         self.rowcounts = list(rowcounts or [])
+        self.result_rows = list(result_rows or [])
         self.rowcount = 1
 
     def execute(self, sql, params=None):
         self.executions.append((sql, params))
         self.rowcount = self.rowcounts.pop(0) if self.rowcounts else 1
 
+    def fetchall(self):
+        return self.result_rows
+
 
 class FakeConnection:
-    def __init__(self, rowcounts=None):
-        self.cursor_obj = FakeCursor(rowcounts=rowcounts)
+    def __init__(self, rowcounts=None, result_rows=None):
+        self.cursor_obj = FakeCursor(rowcounts=rowcounts, result_rows=result_rows)
         self.commits = 0
         self.closed = False
 
@@ -161,6 +166,90 @@ class RdsWriterTests(unittest.TestCase):
         self.assertEqual(current_params["scan_id"], "scan-1")
         self.assertEqual(current_params["started_at"], "2026-08-12T10:00:00+08:00")
         self.assertEqual(current_params["finding_key"], "b3926d5be171d88300a90e163ae33299566eb55df61039e1cacdadf1c89c74e6")
+
+    def test_new_high_risk_findings_queries_current_scan_active_highs(self):
+        connection = FakeConnection(result_rows=[{"endpoint_name": "https://app.example.com:9200"}])
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-12T11:20:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+
+        rows = writer.new_high_risk_findings()
+
+        query_sql, query_params = connection.cursor_obj.executions[1]
+        self.assertIn("FROM asm_current_findings", query_sql)
+        self.assertIn("first_seen_scan_id = %(scan_id)s", query_sql)
+        self.assertIn("risk_level = 'high'", query_sql)
+        self.assertIn("resolved_at IS NULL", query_sql)
+        self.assertEqual(query_params["scan_id"], "scan-1")
+        self.assertEqual(rows, [{"endpoint_name": "https://app.example.com:9200"}])
+
+    def test_notify_new_high_risks_skips_when_webhook_url_missing(self):
+        connection = FakeConnection(result_rows=[{"endpoint_name": "https://app.example.com:9200"}])
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-12T11:20:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+
+        with patch.dict(os.environ, {}, clear=True), patch.object(rds_writer, "post_teams_webhook") as post:
+            writer.notify_new_high_risks()
+
+        post.assert_not_called()
+
+    def test_notify_new_high_risks_posts_card_when_rows_exist(self):
+        row = {
+            "endpoint_name": "https://app.example.com:9200",
+            "wiz_link": "https://app.wiz.io/example",
+            "host": "app.example.com",
+            "port": 9200,
+            "cloud_account_name": "Account One",
+            "check_id": "non_standard_open_port",
+            "evidence": "Open port.",
+            "recommendation": "Close it.",
+            "first_seen_scan_id": "scan-1",
+            "first_seen_at": "2026-08-12T11:20:00+08:00",
+        }
+        connection = FakeConnection(result_rows=[row])
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-12T11:20:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+
+        with patch.dict(os.environ, {"TEAMS_WEBHOOK_URL": "https://teams.example/webhook"}, clear=True), patch.object(rds_writer, "post_teams_webhook") as post:
+            writer.notify_new_high_risks()
+
+        post.assert_called_once()
+        self.assertEqual(post.call_args.args[0], "https://teams.example/webhook")
+        self.assertEqual(post.call_args.args[1]["type"], "AdaptiveCard")
+
+    def test_finalize_logs_teams_failure_without_raising(self):
+        connection = FakeConnection(result_rows=[{"endpoint_name": "https://app.example.com:9200"}])
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-12T11:20:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions={"fdp"},
+        )
+        stderr = StringIO()
+
+        with (
+            patch.dict(os.environ, {"TEAMS_WEBHOOK_URL": "https://teams.example/webhook"}, clear=True),
+            patch.object(rds_writer, "post_teams_webhook", side_effect=RuntimeError("boom")),
+            patch("sys.stderr", stderr),
+        ):
+            writer.finalize()
+
+        self.assertIn("Teams notification failed: RuntimeError: boom", stderr.getvalue())
 
     def test_writer_skips_current_upsert_when_history_insert_conflicts(self):
         connection = FakeConnection(rowcounts=[1, 0])

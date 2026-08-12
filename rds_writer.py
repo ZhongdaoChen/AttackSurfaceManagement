@@ -4,6 +4,8 @@ import datetime
 import hashlib
 import json
 import os
+import sys
+import urllib.request
 from typing import Any
 
 
@@ -185,6 +187,20 @@ def build_teams_high_risk_card(scan_id: str, findings: list[dict[str, Any]]) -> 
     return card
 
 
+def post_teams_webhook(webhook_url: str, card: dict[str, Any]) -> None:
+    body = json.dumps(card, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        webhook_url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        status = getattr(response, "status", response.getcode())
+        if status < 200 or status >= 300:
+            raise RuntimeError(f"Teams webhook returned HTTP {status}")
+
+
 class RdsFindingWriter:
     def __init__(
         self,
@@ -284,6 +300,32 @@ class RdsFindingWriter:
             params,
         )
 
+    def new_high_risk_findings(self) -> list[dict[str, Any]]:
+        self.cursor.execute(
+            """
+            SELECT endpoint_id, endpoint_name, wiz_link, host, port,
+                   cloud_account_name, check_id, evidence, recommendation,
+                   first_seen_scan_id, first_seen_at
+            FROM asm_current_findings
+            WHERE first_seen_scan_id = %(scan_id)s
+              AND risk_level = 'high'
+              AND resolved_at IS NULL
+            ORDER BY first_seen_at ASC, endpoint_name ASC, host ASC, port ASC
+            """,
+            {"scan_id": self.scan_id},
+        )
+        return list(self.cursor.fetchall())
+
+    def notify_new_high_risks(self) -> None:
+        webhook_url = os.getenv("TEAMS_WEBHOOK_URL", "").strip()
+        if not webhook_url:
+            return
+        findings = self.new_high_risk_findings()
+        if not findings:
+            return
+        card = build_teams_high_risk_card(self.scan_id, findings)
+        post_teams_webhook(webhook_url, card)
+
     def finalize(self) -> None:
         self.cursor.execute(
             """
@@ -297,6 +339,10 @@ class RdsFindingWriter:
             {"scan_id": self.scan_id, "resolved_at": self.started_at},
         )
         self.connection.commit()
+        try:
+            self.notify_new_high_risks()
+        except Exception as exc:  # noqa: BLE001 - notification must not fail scans.
+            print(f"Teams notification failed: {type(exc).__name__}: {exc}", file=sys.stderr)
 
     def close(self) -> None:
         self.connection.close()
