@@ -91,6 +91,8 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertIn("Active Attack Surface", labels)
         self.assertNotIn("Active Findings", labels)
+        self.assertIn("Newly Identified This Month", labels)
+        self.assertNotIn("New Latest Scan", labels)
         self.assertIn("Resolved This Quarter", labels)
         self.assertNotIn("Resolved Latest Scan", labels)
 

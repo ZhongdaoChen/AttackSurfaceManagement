@@ -26,7 +26,7 @@ EXPOSURE_TREND_TITLE = "Exposure Trend"
 KPI_LABELS = [
     ("Active Attack Surface", "active_findings"),
     ("Active High", "active_high"),
-    ("New Latest Scan", "new_latest_scan"),
+    ("Newly Identified This Month", "newly_identified_this_month"),
     ("Resolved This Quarter", "resolved_this_quarter"),
     ("Sensitive Exposure 80/443", "sensitive_exposure_80_443"),
     ("Current Non-standard Ports", "current_non_standard_ports"),
@@ -361,14 +361,14 @@ def render_current_table(connection, filters: db.FilterState) -> None:
 def current_status_page(connection) -> None:
     st.title("ASM Current Status")
     st.caption("Executive view of active, non-whitelisted attack surface findings.")
-    latest = db.fetch_latest_scan(connection)
-    latest_scan_id = latest.get("scan_id") if latest else None
     current_rows = db.fetch_current_kpi_rows(connection)
+    now = datetime.datetime.now(datetime.UTC)
+    month_start = datetime.date(now.year, now.month, 1)
     quarter_start = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=90)
     resolved_this_quarter = db.fetch_resolved_high_count_since(connection, quarter_start)
     kpis = metrics.current_kpis(
         current_rows,
-        latest_scan_id=latest_scan_id,
+        newly_identified_since=month_start,
         resolved_this_quarter=resolved_this_quarter,
     )
     render_kpis(kpis)

@@ -11,6 +11,7 @@ class DashboardMetricsTests(unittest.TestCase):
                 "finding_key": "a",
                 "risk_level": "high",
                 "first_seen_scan_id": "scan-2",
+                "first_seen_at": "2026-08-10T10:00:00+08:00",
                 "check_id": "llm_sensitive_content",
                 "port": 443,
             },
@@ -18,6 +19,7 @@ class DashboardMetricsTests(unittest.TestCase):
                 "finding_key": "b",
                 "risk_level": "low",
                 "first_seen_scan_id": "scan-1",
+                "first_seen_at": "2026-07-31T10:00:00+08:00",
                 "check_id": "non_standard_open_port",
                 "port": 9200,
             },
@@ -25,6 +27,7 @@ class DashboardMetricsTests(unittest.TestCase):
                 "finding_key": "low-sensitive-port",
                 "risk_level": "low",
                 "first_seen_scan_id": "scan-2",
+                "first_seen_at": "2026-08-11T10:00:00+08:00",
                 "check_id": "llm_sensitive_content",
                 "port": 443,
             },
@@ -32,16 +35,21 @@ class DashboardMetricsTests(unittest.TestCase):
                 "finding_key": "c",
                 "risk_level": "high",
                 "first_seen_scan_id": "scan-2",
+                "first_seen_at": "2026-07-20T10:00:00+08:00",
                 "check_id": "llm_sensitive_content",
                 "port": 8080,
             },
         ]
 
-        result = metrics.current_kpis(rows, latest_scan_id="scan-2", resolved_this_quarter=4)
+        result = metrics.current_kpis(
+            rows,
+            newly_identified_since=datetime.date(2026, 8, 1),
+            resolved_this_quarter=4,
+        )
 
         self.assertEqual(result["active_findings"], 4)
         self.assertEqual(result["active_high"], 2)
-        self.assertEqual(result["new_latest_scan"], 3)
+        self.assertEqual(result["newly_identified_this_month"], 2)
         self.assertEqual(result["resolved_this_quarter"], 4)
         self.assertEqual(result["sensitive_exposure_80_443"], 1)
         self.assertEqual(result["current_non_standard_ports"], 1)
