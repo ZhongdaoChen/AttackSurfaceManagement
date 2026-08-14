@@ -249,7 +249,6 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           AND f.whitelisted = FALSE
         LEFT JOIN asm_current_findings c ON c.resolved_scan_id = s.scan_id
           AND c.risk_level = 'high'
-          AND c.whitelisted = FALSE
         WHERE s.started_at >= %(trend_start)s
         GROUP BY s.scan_id, s.started_at
         ORDER BY s.started_at ASC, s.scan_id ASC
