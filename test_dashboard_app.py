@@ -10,7 +10,7 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertTrue(callable(app.main))
 
-    def test_row_summary_markdown_includes_endpoint_and_wiz_links(self):
+    def test_table_records_include_expand_raw_endpoint_and_link_urls(self):
         import asm_dashboard.app as app
 
         row = {
@@ -24,14 +24,14 @@ class DashboardAppTests(unittest.TestCase):
             "wiz_link": "https://app.wiz.io/example",
         }
 
-        summary = app.row_summary_markdown(row)
+        records = app.table_records([row])
 
-        self.assertIn(
-            "[http://consumer-uat.adidas.com.cn:80/membership/adidas/cn](http://consumer-uat.adidas.com.cn:80/membership/adidas/cn)",
-            summary,
-        )
-        self.assertIn("[Wiz Link](https://app.wiz.io/example)", summary)
-        self.assertIn("Sensitive data exposed", summary)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["Expand"], "View")
+        self.assertEqual(records[0]["Endpoint Name"], "http://consumer-uat.adidas.com.cn:80/membership/adidas/cn")
+        self.assertEqual(records[0]["Endpoint URL"], "http://consumer-uat.adidas.com.cn:80/membership/adidas/cn")
+        self.assertEqual(records[0]["Wiz Link"], "https://app.wiz.io/example")
+        self.assertNotIn("[", records[0]["Endpoint Name"])
 
     def test_app_file_path_execution_can_import_dashboard_package(self):
         env = os.environ.copy()

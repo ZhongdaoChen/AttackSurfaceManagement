@@ -132,45 +132,35 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
                 st.plotly_chart(px.bar(frame, x=key, y="count"), use_container_width=True)
 
 
-def table_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+def table_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     records = []
     for row in rows:
+        endpoint = str(row.get("endpoint_name") or "").strip()
+        endpoint_url = endpoint if endpoint.startswith(("http://", "https://")) else ""
+        wiz_url = str(row.get("wiz_link") or "").strip()
         records.append(
             {
-                "Endpoint Name": metrics.endpoint_link(row.get("endpoint_name")),
+                "Expand": "View",
+                "Endpoint Name": endpoint,
+                "Endpoint URL": endpoint_url,
                 "Port": row.get("port"),
                 "Cloud Platform": row.get("cloud_platform"),
                 "Cloud Account Name": row.get("cloud_account_name"),
                 "Risk Level": row.get("risk_level"),
                 "Evidence": row.get("evidence"),
                 "First Seen At": row.get("first_seen_at"),
+                "Wiz Link": wiz_url,
                 "Check ID": row.get("check_id"),
                 "Exposure Level": row.get("exposure_level"),
                 "_row": row,
             }
         )
+    return records
+
+
+def table_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    records = table_records(rows)
     return pd.DataFrame(records)
-
-
-def row_summary_markdown(row: dict[str, Any]) -> str:
-    endpoint = metrics.endpoint_link(row.get("endpoint_name"))
-    wiz = metrics.wiz_link(row.get("wiz_link")) or ""
-    fields = [
-        f"**Endpoint Name:** {endpoint}",
-        f"**Port:** {row.get('port') or ''}",
-        f"**Cloud Platform:** {row.get('cloud_platform') or ''}",
-        f"**Cloud Account Name:** {row.get('cloud_account_name') or ''}",
-        f"**Risk Level:** {row.get('risk_level') or ''}",
-        f"**Evidence:** {row.get('evidence') or ''}",
-        f"**First Seen At:** {row.get('first_seen_at') or ''}",
-    ]
-    if wiz:
-        fields.append(f"**Wiz Link:** {wiz}")
-    return " | ".join(fields)
-
-
-def row_identity(row: dict[str, Any], index: int) -> str:
-    return str(row.get("finding_key") or row.get("id") or f"row-{index}")
 
 
 def render_page_controls(total: int, key: str) -> int:
@@ -188,44 +178,62 @@ def selected_row_indices(selection: Any) -> list[int]:
     return list(rows)
 
 
-def render_whitelist_form(connection, row: dict[str, Any], form_key: str) -> None:
-    with st.form(form_key):
-        st.write(f"Whitelist `{row.get('endpoint_name')}` port `{row.get('port')}`")
-        reason = st.text_area("Reason")
-        operator_name = st.text_input("Operator name")
-        submitted = st.form_submit_button("Confirm whitelist")
-    if submitted:
-        try:
-            db.create_whitelist_rule(
-                connection,
-                endpoint_name=str(row.get("endpoint_name") or ""),
-                port=row.get("port"),
-                reason=reason,
-                operator_name=operator_name,
-            )
-        except Exception as exc:
-            st.error(f"Whitelist failed: {type(exc).__name__}: {exc}")
-        else:
-            st.success("Whitelist rule created and matching current/history findings updated.")
-            st.rerun()
+def open_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> None:
+    @st.dialog("Add to whitelist")
+    def whitelist_dialog() -> None:
+        st.write(f"Endpoint: `{row.get('endpoint_name')}`")
+        st.write(f"Port: `{row.get('port')}`")
+        with st.form(dialog_key):
+            reason = st.text_area("Reason")
+            operator_name = st.text_input("Operator Name")
+            submitted = st.form_submit_button("Confirm whitelist")
+        if submitted:
+            try:
+                db.create_whitelist_rule(
+                    connection,
+                    endpoint_name=str(row.get("endpoint_name") or ""),
+                    port=row.get("port"),
+                    reason=reason,
+                    operator_name=operator_name,
+                )
+            except Exception as exc:
+                st.error(f"Whitelist failed: {type(exc).__name__}: {exc}")
+            else:
+                st.success("Whitelist rule created and matching current/history findings updated.")
+                st.rerun()
+
+    whitelist_dialog()
 
 
-def render_finding_list(connection, result: db.PageResult, page_key: str, allow_whitelist: bool) -> None:
+def render_finding_table(connection, result: db.PageResult, page_key: str, allow_whitelist: bool) -> None:
     st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
     if not result.rows:
         st.info("No findings match the filters.")
         return
-    for index, row in enumerate(result.rows, start=1):
-        identity = row_identity(row, index)
-        with st.expander(row_summary_markdown(row), expanded=False):
-            endpoint = metrics.endpoint_link(row.get("endpoint_name"))
-            wiz = metrics.wiz_link(row.get("wiz_link"))
-            col1, col2 = st.columns(2)
-            col1.markdown(f"**Endpoint Name:** {endpoint}")
-            col2.markdown(f"**Wiz Link:** {wiz}" if wiz else "**Wiz Link:**")
-            st.json(row, expanded=False)
-            if allow_whitelist:
-                render_whitelist_form(connection, row, f"whitelist_{page_key}_{identity}")
+    frame = table_frame(result.rows)
+    visible = frame.drop(columns=["_row"])
+    selection = st.dataframe(
+        visible,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+        column_config={
+            "Expand": st.column_config.TextColumn("Expand", help="Select a row to expand details below."),
+            "Endpoint Name": st.column_config.LinkColumn("Endpoint Name"),
+            "Endpoint URL": None,
+            "Wiz Link": st.column_config.LinkColumn("Wiz Link", display_text="Wiz Link"),
+        },
+    )
+    selected_rows = selected_row_indices(selection)
+    if not selected_rows:
+        st.info("Select a row to expand details.")
+        return
+    selected = frame.iloc[selected_rows[0]]["_row"]
+    st.subheader("Finding details")
+    st.json(selected, expanded=False)
+    if allow_whitelist and st.button("Whitelist", key=f"open_whitelist_{page_key}_{selected_rows[0]}"):
+        open_whitelist_dialog(connection, selected, f"whitelist_{page_key}_{selected_rows[0]}")
 
 
 def current_page_value(key: str) -> int:
@@ -235,7 +243,7 @@ def current_page_value(key: str) -> int:
 def render_current_table(connection, filters: db.FilterState) -> None:
     page = current_page_value("current_page")
     result = db.fetch_current_findings(connection, filters, page=page, page_size=PAGE_SIZE)
-    render_finding_list(connection, result, "current_page", allow_whitelist=True)
+    render_finding_table(connection, result, "current_page", allow_whitelist=True)
     render_page_controls(result.total, "current_page")
 
 
@@ -270,7 +278,7 @@ def historical_results_page(connection) -> None:
     col2.metric("Total findings", result.total)
     col3.metric("High findings on page", high_count)
     col4.metric("Whitelisted on page", whitelisted_count)
-    render_finding_list(connection, result, "history_page", allow_whitelist=False)
+    render_finding_table(connection, result, "history_page", allow_whitelist=False)
     render_page_controls(result.total, "history_page")
 
 
