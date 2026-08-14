@@ -91,6 +91,36 @@ ECS 上需要安装 Python PostgreSQL 驱动：
 pip3 install -r requirements.txt
 ```
 
+### ASM Streamlit Dashboard
+
+Dashboard 读取同一套 RDS PostgreSQL 表，用于展示 ASM 当前状态、历史扫描结果和 dashboard 管理的白名单规则。
+
+安装依赖：
+
+```bash
+pip3 install -r requirements.txt
+```
+
+配置环境变量，或写入 `.env`：
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `RDS_HOST` | 是 | RDS PostgreSQL 地址 |
+| `RDS_PORT` | 否 | RDS PostgreSQL 端口，默认 `5432` |
+| `RDS_DB` | 是 | 数据库名 |
+| `RDS_USER` | 是 | 数据库用户名 |
+| `RDS_PASSWORD` | 是 | 数据库密码 |
+| `RDS_SSLMODE` | 否 | PostgreSQL SSL mode，默认 `prefer` |
+| `DASHBOARD_PASSWORD` | 是 | 打开 dashboard 需要输入的密码 |
+
+运行：
+
+```bash
+streamlit run asm_dashboard/app.py
+```
+
+默认页面是 Current Status，只展示 active 且非 whitelisted 的 current findings。Historical Results 在侧边栏中按扫描日期查看历史结果，并包含 whitelisted 记录。Whitelist Rules 展示 dashboard 创建的 `endpoint_name + port` 白名单规则并支持停用；停用只影响未来扫描，不回滚已经标记为 whitelisted 的 findings。
+
 ## 常用命令
 
 ### 1. 检查 Wiz 认证和 GraphQL 连通性
