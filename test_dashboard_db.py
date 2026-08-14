@@ -98,7 +98,7 @@ class DashboardDbTests(unittest.TestCase):
         self.assertEqual(data_params["start_date"], datetime.date(2026, 8, 14))
         self.assertEqual(result.rows, [{"id": 1, "whitelisted": True}])
 
-    def test_fetch_resolved_high_count_since_counts_high_risk_non_whitelisted_resolved_after_since(self):
+    def test_fetch_resolved_high_count_since_counts_high_risk_resolved_after_since(self):
         connection = FakeConnection(count=3)
         since = datetime.datetime(2026, 5, 14, 12, 0, tzinfo=datetime.UTC)
 
@@ -107,7 +107,7 @@ class DashboardDbTests(unittest.TestCase):
         sql, params = connection.cursor_obj.executions[0]
         self.assertIn("FROM asm_current_findings", sql)
         self.assertIn("risk_level = 'high'", sql)
-        self.assertIn("whitelisted = FALSE", sql)
+        self.assertNotIn("whitelisted = FALSE", sql)
         self.assertIn("resolved_at >= %(since)s", sql)
         self.assertEqual(params["since"], since)
         self.assertEqual(count, 3)
@@ -124,7 +124,7 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("LEFT JOIN asm_findings f ON f.scan_id = s.scan_id", sql)
         self.assertIn("LEFT JOIN asm_current_findings c ON c.resolved_scan_id = s.scan_id", sql)
         self.assertIn("f.risk_level = 'high'", sql)
-        self.assertIn("f.whitelisted = FALSE", sql)
+        self.assertNotIn("f.whitelisted = FALSE", sql)
         self.assertIn("c.risk_level = 'high'", sql)
         self.assertNotIn("c.whitelisted = FALSE", sql)
         self.assertIn("WHERE s.started_at >= %(trend_start)s", sql)

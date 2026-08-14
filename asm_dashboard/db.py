@@ -226,7 +226,6 @@ def fetch_resolved_high_count_since(connection, since: datetime.datetime) -> int
         SELECT COUNT(*) AS count
         FROM asm_current_findings
         WHERE risk_level = 'high'
-          AND whitelisted = FALSE
           AND resolved_at >= %(since)s
         """,
         {"since": since},
@@ -246,7 +245,6 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
         FROM asm_scans s
         LEFT JOIN asm_findings f ON f.scan_id = s.scan_id
           AND f.risk_level = 'high'
-          AND f.whitelisted = FALSE
         LEFT JOIN asm_current_findings c ON c.resolved_scan_id = s.scan_id
           AND c.risk_level = 'high'
         WHERE s.started_at >= %(trend_start)s
