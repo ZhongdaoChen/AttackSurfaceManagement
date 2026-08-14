@@ -33,6 +33,25 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(records[0]["Wiz Link"], "https://app.wiz.io/example")
         self.assertNotIn("[", records[0]["Endpoint Name"])
 
+    def test_finding_row_model_uses_expand_button_and_row_detail_key(self):
+        import asm_dashboard.app as app
+
+        row = {
+            "finding_key": "finding-1",
+            "endpoint_name": "https://app.example.com",
+            "wiz_link": "https://app.wiz.io/example",
+        }
+
+        model = app.finding_row_model(row, page_key="current_page", index=3)
+
+        self.assertEqual(model["expand_key"], "expand_current_page_finding-1")
+        self.assertEqual(model["expanded_state_key"], "expanded_current_page")
+        self.assertEqual(model["identity"], "finding-1")
+        self.assertEqual(model["endpoint_label"], "https://app.example.com")
+        self.assertEqual(model["endpoint_url"], "https://app.example.com")
+        self.assertEqual(model["wiz_label"], "Wiz Link")
+        self.assertEqual(model["wiz_url"], "https://app.wiz.io/example")
+
     def test_kpi_labels_include_resolved_this_quarter(self):
         import asm_dashboard.app as app
 

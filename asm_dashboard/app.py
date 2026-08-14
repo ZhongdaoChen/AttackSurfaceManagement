@@ -178,6 +178,22 @@ def selected_row_indices(selection: Any) -> list[int]:
     return list(rows)
 
 
+def finding_row_model(row: dict[str, Any], page_key: str, index: int) -> dict[str, Any]:
+    identity = str(row.get("finding_key") or row.get("id") or f"row-{index}")
+    endpoint = str(row.get("endpoint_name") or "").strip()
+    endpoint_url = endpoint if endpoint.startswith(("http://", "https://")) else ""
+    wiz_url = str(row.get("wiz_link") or "").strip()
+    return {
+        "identity": identity,
+        "expanded_state_key": f"expanded_{page_key}",
+        "expand_key": f"expand_{page_key}_{identity}",
+        "endpoint_label": endpoint,
+        "endpoint_url": endpoint_url,
+        "wiz_label": "Wiz Link" if wiz_url else "",
+        "wiz_url": wiz_url,
+    }
+
+
 def open_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> None:
     @st.dialog("Add to whitelist")
     def whitelist_dialog() -> None:
@@ -205,35 +221,62 @@ def open_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> N
     whitelist_dialog()
 
 
+def render_link(label: str, url: str) -> None:
+    if url:
+        st.markdown(metrics.markdown_link(label, url))
+    else:
+        st.write(label)
+
+
+def render_table_header() -> None:
+    columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.0, 2.4, 1.5, 0.9])
+    headers = [
+        "Expand",
+        "Endpoint Name",
+        "Port",
+        "Cloud Platform",
+        "Cloud Account Name",
+        "Risk Level",
+        "Evidence",
+        "First Seen At",
+        "Wiz Link",
+    ]
+    for column, header in zip(columns, headers, strict=True):
+        column.markdown(f"**{header}**")
+
+
+def render_finding_row(connection, row: dict[str, Any], page_key: str, index: int, allow_whitelist: bool) -> None:
+    model = finding_row_model(row, page_key, index)
+    columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.0, 2.4, 1.5, 0.9])
+    if columns[0].button("Expand", key=model["expand_key"]):
+        current = st.session_state.get(model["expanded_state_key"])
+        st.session_state[model["expanded_state_key"]] = None if current == model["identity"] else model["identity"]
+        st.rerun()
+    with columns[1]:
+        render_link(model["endpoint_label"], model["endpoint_url"])
+    columns[2].write(row.get("port") or "")
+    columns[3].write(row.get("cloud_platform") or "")
+    columns[4].write(row.get("cloud_account_name") or "")
+    columns[5].write(row.get("risk_level") or "")
+    columns[6].write(row.get("evidence") or "")
+    columns[7].write(row.get("first_seen_at") or "")
+    with columns[8]:
+        render_link(model["wiz_label"], model["wiz_url"])
+    if st.session_state.get(model["expanded_state_key"]) == model["identity"]:
+        st.markdown("---")
+        st.json(row, expanded=False)
+        if allow_whitelist and st.button("Whitelist", key=f"open_whitelist_{page_key}_{model['identity']}"):
+            open_whitelist_dialog(connection, row, f"whitelist_{page_key}_{model['identity']}")
+
+
 def render_finding_table(connection, result: db.PageResult, page_key: str, allow_whitelist: bool) -> None:
     st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
     if not result.rows:
         st.info("No findings match the filters.")
         return
-    frame = table_frame(result.rows)
-    visible = frame.drop(columns=["_row"])
-    selection = st.dataframe(
-        visible,
-        use_container_width=True,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-        column_config={
-            "Expand": st.column_config.TextColumn("Expand", help="Select a row to expand details below."),
-            "Endpoint Name": st.column_config.LinkColumn("Endpoint Name"),
-            "Endpoint URL": None,
-            "Wiz Link": st.column_config.LinkColumn("Wiz Link", display_text="Wiz Link"),
-        },
-    )
-    selected_rows = selected_row_indices(selection)
-    if not selected_rows:
-        st.info("Select a row to expand details.")
-        return
-    selected = frame.iloc[selected_rows[0]]["_row"]
-    st.subheader("Finding details")
-    st.json(selected, expanded=False)
-    if allow_whitelist and st.button("Whitelist", key=f"open_whitelist_{page_key}_{selected_rows[0]}"):
-        open_whitelist_dialog(connection, selected, f"whitelist_{page_key}_{selected_rows[0]}")
+    render_table_header()
+    for index, row in enumerate(result.rows, start=1):
+        render_finding_row(connection, row, page_key, index, allow_whitelist)
 
 
 def current_page_value(key: str) -> int:
