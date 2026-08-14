@@ -23,6 +23,9 @@ class FakeCursor:
     def fetchall(self):
         return self.result_rows
 
+    def fetchone(self):
+        return self.result_rows[0] if self.result_rows else None
+
 
 class FakeConnection:
     def __init__(self, rowcounts=None, result_rows=None):
@@ -148,6 +151,18 @@ class RdsWriterTests(unittest.TestCase):
         self.assertIn("idx_asm_current_findings_active", schema)
         self.assertIn("idx_asm_current_findings_resolved_at", schema)
 
+    def test_schema_defines_dashboard_whitelist_rules(self):
+        schema = Path("schema.sql").read_text(encoding="utf-8")
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS asm_whitelist_rules", schema)
+        self.assertIn("endpoint_name TEXT NOT NULL", schema)
+        self.assertIn("port INTEGER", schema)
+        self.assertIn("reason TEXT NOT NULL", schema)
+        self.assertIn("operator_name TEXT NOT NULL", schema)
+        self.assertIn("active BOOLEAN NOT NULL DEFAULT TRUE", schema)
+        self.assertIn("deactivated_at TIMESTAMPTZ", schema)
+        self.assertIn("idx_asm_whitelist_rules_active_lookup", schema)
+
     def test_finding_key_normalizes_missing_identity_fields(self):
         params = {
             "endpoint_id": None,
@@ -211,6 +226,46 @@ class RdsWriterTests(unittest.TestCase):
         self.assertEqual(params["endpoint_id"], "endpoint-1")
         self.assertEqual(params["tag_emails"], ["owner@example.com"])
 
+    def test_dashboard_whitelisted_queries_active_endpoint_port_rule(self):
+        cursor = FakeCursor(result_rows=[{"id": 1}])
+
+        self.assertTrue(rds_writer.dashboard_whitelisted(cursor, "https://app.example.com:443", 443))
+
+        sql, params = cursor.executions[0]
+        self.assertIn("FROM asm_whitelist_rules", sql)
+        self.assertIn("active = TRUE", sql)
+        self.assertIn("endpoint_name = %(endpoint_name)s", sql)
+        self.assertIn("COALESCE(port, -1) = COALESCE(%(port)s, -1)", sql)
+        self.assertEqual(params, {"endpoint_name": "https://app.example.com:443", "port": 443})
+
+    def test_writer_marks_future_scan_finding_whitelisted_from_dashboard_rule(self):
+        connection = FakeConnection(result_rows=[{"id": 1}])
+        finding = {
+            "endpoint_id": "endpoint-1",
+            "endpoint_name": "https://app.example.com:443",
+            "host": "app.example.com",
+            "port": 443,
+            "check_id": "llm_sensitive_content",
+            "risk_level": "high",
+            "details": {"status": 200},
+        }
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-08-14T10:00:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions=set(),
+        )
+
+        writer.write(finding)
+
+        history_sql, history_params = connection.cursor_obj.executions[2]
+        current_sql, current_params = connection.cursor_obj.executions[3]
+        self.assertIn("INSERT INTO asm_findings", history_sql)
+        self.assertIn("INSERT INTO asm_current_findings", current_sql)
+        self.assertTrue(history_params["whitelisted"])
+        self.assertTrue(current_params["whitelisted"])
+
     def test_writer_upserts_current_finding_after_history_insert(self):
         connection = FakeConnection()
         finding = {
@@ -241,7 +296,7 @@ class RdsWriterTests(unittest.TestCase):
         )
         writer.write(finding)
 
-        current_sql, current_params = connection.cursor_obj.executions[2]
+        current_sql, current_params = connection.cursor_obj.executions[3]
         self.assertIn("INSERT INTO asm_current_findings", current_sql)
         self.assertIn("ON CONFLICT (finding_key) DO UPDATE", current_sql)
         self.assertIn("seen_count = asm_current_findings.seen_count + 1", current_sql)
@@ -418,7 +473,7 @@ class RdsWriterTests(unittest.TestCase):
         self.assertEqual(connection.commits, 2)
         self.assertTrue(connection.closed)
         scan_sql, scan_params = connection.cursor_obj.executions[0]
-        finding_sql, finding_params = connection.cursor_obj.executions[1]
+        finding_sql, finding_params = connection.cursor_obj.executions[2]
         self.assertIn("INSERT INTO asm_scans", scan_sql)
         self.assertEqual(scan_params["scan_id"], "scan-1")
         self.assertIn("INSERT INTO asm_findings", finding_sql)

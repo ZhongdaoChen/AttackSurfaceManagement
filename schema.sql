@@ -141,3 +141,23 @@ CREATE INDEX IF NOT EXISTS idx_asm_current_findings_host
 
 CREATE INDEX IF NOT EXISTS idx_asm_current_findings_cloud_account_name
   ON asm_current_findings(cloud_account_name);
+
+CREATE TABLE IF NOT EXISTS asm_whitelist_rules (
+  id BIGSERIAL PRIMARY KEY,
+  endpoint_name TEXT NOT NULL,
+  port INTEGER,
+  reason TEXT NOT NULL,
+  operator_name TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deactivated_at TIMESTAMPTZ,
+  deactivated_by TEXT,
+  deactivation_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_asm_whitelist_rules_active_lookup
+  ON asm_whitelist_rules(endpoint_name, COALESCE(port, -1))
+  WHERE active = TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_asm_whitelist_rules_active
+  ON asm_whitelist_rules(active);

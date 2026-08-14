@@ -82,6 +82,24 @@ def is_whitelisted_finding(finding: dict[str, Any], low_risk_subscriptions: set[
     return bool(subscription and subscription in low_risk_subscriptions)
 
 
+def dashboard_whitelisted(cursor, endpoint_name: Any, port: Any) -> bool:
+    endpoint = str(endpoint_name or "").strip()
+    if not endpoint:
+        return False
+    cursor.execute(
+        """
+        SELECT id
+        FROM asm_whitelist_rules
+        WHERE active = TRUE
+          AND endpoint_name = %(endpoint_name)s
+          AND COALESCE(port, -1) = COALESCE(%(port)s, -1)
+        LIMIT 1
+        """,
+        {"endpoint_name": endpoint, "port": port},
+    )
+    return cursor.fetchone() is not None
+
+
 def strip_nul_bytes(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
@@ -266,6 +284,8 @@ class RdsFindingWriter:
 
     def write(self, finding: dict[str, Any]) -> None:
         params = finding_insert_params(finding, self.scan_id, self.low_risk_subscriptions)
+        if dashboard_whitelisted(self.cursor, params.get("endpoint_name"), params.get("port")):
+            params["whitelisted"] = True
         self.cursor.execute(
             """
             INSERT INTO asm_findings (
