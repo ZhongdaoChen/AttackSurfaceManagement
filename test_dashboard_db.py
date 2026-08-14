@@ -112,19 +112,27 @@ class DashboardDbTests(unittest.TestCase):
         self.assertEqual(params["since"], since)
         self.assertEqual(count, 3)
 
-    def test_fetch_trend_rows_groups_high_risk_counts_by_scan(self):
-        connection = FakeConnection(rows=[{"scan_id": "scan-1", "scan_started_at": "2026-08-14", "high_risk_count": 2}])
+    def test_fetch_trend_rows_groups_high_risk_and_mitigated_counts_by_scan(self):
+        connection = FakeConnection(
+            rows=[{"scan_id": "scan-1", "scan_started_at": "2026-08-14", "high_risk_count": 2, "mitigated_count": 1}]
+        )
 
         rows = db.fetch_trend_rows(connection)
 
         sql, params = connection.cursor_obj.executions[0]
         self.assertIn("FROM asm_scans s", sql)
         self.assertIn("LEFT JOIN asm_findings f ON f.scan_id = s.scan_id", sql)
+        self.assertIn("LEFT JOIN asm_current_findings c ON c.resolved_scan_id = s.scan_id", sql)
         self.assertIn("f.risk_level = 'high'", sql)
         self.assertIn("f.whitelisted = FALSE", sql)
+        self.assertIn("c.risk_level = 'high'", sql)
+        self.assertIn("c.whitelisted = FALSE", sql)
         self.assertIn("GROUP BY s.scan_id, s.started_at", sql)
         self.assertEqual(params, {})
-        self.assertEqual(rows, [{"scan_id": "scan-1", "scan_started_at": "2026-08-14", "high_risk_count": 2}])
+        self.assertEqual(
+            rows,
+            [{"scan_id": "scan-1", "scan_started_at": "2026-08-14", "high_risk_count": 2, "mitigated_count": 1}],
+        )
 
     def test_create_whitelist_rule_inserts_rule_and_backfills_current_and_history(self):
         connection = FakeConnection()

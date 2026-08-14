@@ -21,6 +21,7 @@ TABLE_SCROLL_HEIGHT = 5200
 ROW_DETAIL_JSON_EXPANDED = True
 EXPOSURE_TREND_COLORS = {
     "High Risk": "#d62728",
+    "Mitigated": "#1f77b4",
 }
 EXPOSURE_TREND_TITLE = "Exposure Trend"
 KPI_LABELS = [

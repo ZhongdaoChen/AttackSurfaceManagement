@@ -240,11 +240,15 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
         SELECT
           s.scan_id,
           s.started_at AS scan_started_at,
-          COUNT(f.id) AS high_risk_count
+          COUNT(DISTINCT f.id) AS high_risk_count,
+          COUNT(DISTINCT c.finding_key) AS mitigated_count
         FROM asm_scans s
         LEFT JOIN asm_findings f ON f.scan_id = s.scan_id
           AND f.risk_level = 'high'
           AND f.whitelisted = FALSE
+        LEFT JOIN asm_current_findings c ON c.resolved_scan_id = s.scan_id
+          AND c.risk_level = 'high'
+          AND c.whitelisted = FALSE
         GROUP BY s.scan_id, s.started_at
         ORDER BY s.started_at ASC, s.scan_id ASC
         """,

@@ -106,6 +106,7 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertEqual(app.EXPOSURE_TREND_TITLE, "Exposure Trend")
         self.assertEqual(app.EXPOSURE_TREND_COLORS["High Risk"], "#d62728")
+        self.assertEqual(app.EXPOSURE_TREND_COLORS["Mitigated"], "#1f77b4")
 
     def test_app_file_path_execution_can_import_dashboard_package(self):
         env = os.environ.copy()

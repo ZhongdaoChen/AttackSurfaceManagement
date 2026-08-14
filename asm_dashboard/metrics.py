@@ -59,6 +59,14 @@ def trend_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
                 "count": int(row.get("high_risk_count") or 0),
             }
         )
+        records.append(
+            {
+                "date": scan_date,
+                "scan_id": row.get("scan_id"),
+                "metric": "Mitigated",
+                "count": int(row.get("mitigated_count") or 0),
+            }
+        )
     if not records:
         return pd.DataFrame(columns=["date", "scan_id", "metric", "count"])
     return pd.DataFrame(records, columns=["date", "scan_id", "metric", "count"])
