@@ -127,8 +127,9 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("f.whitelisted = FALSE", sql)
         self.assertIn("c.risk_level = 'high'", sql)
         self.assertIn("c.whitelisted = FALSE", sql)
+        self.assertIn("WHERE s.started_at >= %(trend_start)s", sql)
         self.assertIn("GROUP BY s.scan_id, s.started_at", sql)
-        self.assertEqual(params, {})
+        self.assertEqual(params, {"trend_start": db.EXPOSURE_TREND_START_DATE})
         self.assertEqual(
             rows,
             [{"scan_id": "scan-1", "scan_started_at": "2026-08-14", "high_risk_count": 2, "mitigated_count": 1}],
