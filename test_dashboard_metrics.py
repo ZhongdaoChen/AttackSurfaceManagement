@@ -104,9 +104,9 @@ class DashboardMetricsTests(unittest.TestCase):
         self.assertEqual(
             frame.to_dict("records"),
             [
-                {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "High Risk", "count": 2},
+                {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "High Risk", "count": 1},
                 {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "Mitigated", "count": 1},
-                {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "High Risk", "count": 5},
+                {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "High Risk", "count": 2},
                 {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "Mitigated", "count": 3},
             ],
         )

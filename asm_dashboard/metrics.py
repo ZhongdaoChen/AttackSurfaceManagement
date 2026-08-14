@@ -51,12 +51,14 @@ def trend_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
         scan_date = _as_date(row.get("scan_started_at"))
         if scan_date is None:
             continue
+        high_risk_count = int(row.get("high_risk_count") or 0)
+        mitigated_count = int(row.get("mitigated_count") or 0)
         records.append(
             {
                 "date": scan_date,
                 "scan_id": row.get("scan_id"),
                 "metric": "High Risk",
-                "count": int(row.get("high_risk_count") or 0),
+                "count": max(0, high_risk_count - mitigated_count),
             }
         )
         records.append(
@@ -64,7 +66,7 @@ def trend_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
                 "date": scan_date,
                 "scan_id": row.get("scan_id"),
                 "metric": "Mitigated",
-                "count": int(row.get("mitigated_count") or 0),
+                "count": mitigated_count,
             }
         )
     if not records:
