@@ -33,6 +33,14 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(records[0]["Wiz Link"], "https://app.wiz.io/example")
         self.assertNotIn("[", records[0]["Endpoint Name"])
 
+    def test_kpi_labels_include_resolved_this_quarter(self):
+        import asm_dashboard.app as app
+
+        labels = [label for label, _key in app.KPI_LABELS]
+
+        self.assertIn("Resolved This Quarter", labels)
+        self.assertNotIn("Resolved Latest Scan", labels)
+
     def test_app_file_path_execution_can_import_dashboard_package(self):
         env = os.environ.copy()
         env.pop("DASHBOARD_PASSWORD", None)

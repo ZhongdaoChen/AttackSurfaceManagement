@@ -30,12 +30,12 @@ class DashboardMetricsTests(unittest.TestCase):
             },
         ]
 
-        result = metrics.current_kpis(rows, latest_scan_id="scan-2", resolved_latest_scan=4)
+        result = metrics.current_kpis(rows, latest_scan_id="scan-2", resolved_this_quarter=4)
 
         self.assertEqual(result["active_findings"], 3)
         self.assertEqual(result["active_high"], 1)
         self.assertEqual(result["new_latest_scan"], 2)
-        self.assertEqual(result["resolved_latest_scan"], 4)
+        self.assertEqual(result["resolved_this_quarter"], 4)
         self.assertEqual(result["sensitive_exposure_80_443"], 1)
         self.assertEqual(result["current_non_standard_ports"], 1)
 

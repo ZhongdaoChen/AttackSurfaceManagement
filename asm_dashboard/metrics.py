@@ -9,13 +9,13 @@ import pandas as pd
 def current_kpis(
     rows: list[dict[str, Any]],
     latest_scan_id: str | None,
-    resolved_latest_scan: int = 0,
+    resolved_this_quarter: int = 0,
 ) -> dict[str, int]:
     return {
         "active_findings": len(rows),
         "active_high": sum(1 for row in rows if str(row.get("risk_level") or "").lower() == "high"),
         "new_latest_scan": sum(1 for row in rows if latest_scan_id and row.get("first_seen_scan_id") == latest_scan_id),
-        "resolved_latest_scan": int(resolved_latest_scan),
+        "resolved_this_quarter": int(resolved_this_quarter),
         "sensitive_exposure_80_443": sum(
             1
             for row in rows

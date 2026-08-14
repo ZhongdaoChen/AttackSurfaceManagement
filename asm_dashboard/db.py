@@ -218,17 +218,17 @@ def fetch_current_kpi_rows(connection) -> list[dict[str, Any]]:
     return _fetch_all(cursor)
 
 
-def fetch_resolved_count_for_scan(connection, scan_id: str | None) -> int:
-    if not scan_id:
-        return 0
+def fetch_resolved_high_count_since(connection, since: datetime.datetime) -> int:
     cursor = connection.cursor()
     cursor.execute(
         """
         SELECT COUNT(*) AS count
         FROM asm_current_findings
-        WHERE resolved_scan_id = %(scan_id)s
+        WHERE risk_level = 'high'
+          AND whitelisted = FALSE
+          AND resolved_at >= %(since)s
         """,
-        {"scan_id": scan_id},
+        {"since": since},
     )
     return _fetch_count(cursor)
 

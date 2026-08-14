@@ -17,6 +17,14 @@ from assess_attack_surface import load_dotenv
 
 
 PAGE_SIZE = 200
+KPI_LABELS = [
+    ("Active Findings", "active_findings"),
+    ("Active High", "active_high"),
+    ("New Latest Scan", "new_latest_scan"),
+    ("Resolved This Quarter", "resolved_this_quarter"),
+    ("Sensitive Exposure 80/443", "sensitive_exposure_80_443"),
+    ("Current Non-standard Ports", "current_non_standard_ports"),
+]
 
 
 def require_login() -> bool:
@@ -86,16 +94,8 @@ def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> 
 
 
 def render_kpis(kpis: dict[str, int]) -> None:
-    labels = [
-        ("Active Findings", "active_findings"),
-        ("Active High", "active_high"),
-        ("New Latest Scan", "new_latest_scan"),
-        ("Resolved Latest Scan", "resolved_latest_scan"),
-        ("Sensitive Exposure 80/443", "sensitive_exposure_80_443"),
-        ("Current Non-standard Ports", "current_non_standard_ports"),
-    ]
     cols = st.columns(3)
-    for index, (label, key) in enumerate(labels):
+    for index, (label, key) in enumerate(KPI_LABELS):
         cols[index % 3].metric(label, kpis.get(key, 0))
 
 
@@ -253,8 +253,13 @@ def current_status_page(connection) -> None:
     latest = db.fetch_latest_scan(connection)
     latest_scan_id = latest.get("scan_id") if latest else None
     current_rows = db.fetch_current_kpi_rows(connection)
-    resolved_latest_scan = db.fetch_resolved_count_for_scan(connection, latest_scan_id)
-    kpis = metrics.current_kpis(current_rows, latest_scan_id=latest_scan_id, resolved_latest_scan=resolved_latest_scan)
+    quarter_start = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=90)
+    resolved_this_quarter = db.fetch_resolved_high_count_since(connection, quarter_start)
+    kpis = metrics.current_kpis(
+        current_rows,
+        latest_scan_id=latest_scan_id,
+        resolved_this_quarter=resolved_this_quarter,
+    )
     render_kpis(kpis)
     render_current_charts(current_rows, db.fetch_trend_rows(connection))
     options = db.fetch_filter_options(connection, current_only=True)
