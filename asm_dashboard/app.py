@@ -18,6 +18,7 @@ from assess_attack_surface import load_dotenv
 
 PAGE_SIZE = 200
 TABLE_SCROLL_HEIGHT = 5200
+ROW_DETAIL_JSON_EXPANDED = True
 EXPOSURE_TREND_COLORS = {
     "High Risk": "#d62728",
     "Resolved High Risk": "#1f77b4",
@@ -183,6 +184,15 @@ def subscription_account_owner(row: dict[str, Any]) -> str:
     return str(value or "")
 
 
+def display_date_only(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime.datetime | datetime.date):
+        return value.date().isoformat() if isinstance(value, datetime.datetime) else value.isoformat()
+    text = str(value).strip()
+    return text[:10] if len(text) >= 10 else text
+
+
 def render_page_controls(total: int, key: str) -> int:
     page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return int(st.number_input("Page", min_value=1, max_value=page_count, value=1, step=1, key=key))
@@ -286,12 +296,12 @@ def render_finding_row(connection, row: dict[str, Any], page_key: str, index: in
     columns[5].write(subscription_account_owner(row))
     columns[6].write(row.get("risk_level") or "")
     columns[7].write(row.get("evidence") or "")
-    columns[8].write(row.get("first_seen_at") or "")
+    columns[8].write(display_date_only(row.get("first_seen_at")))
     with columns[9]:
         render_link(model["wiz_label"], model["wiz_url"])
     if st.session_state.get(model["expanded_state_key"]) == model["identity"]:
         st.markdown("---")
-        st.json(row, expanded=False)
+        st.json(row, expanded=ROW_DETAIL_JSON_EXPANDED)
         if allow_whitelist and st.button("Whitelist", key=f"open_whitelist_{page_key}_{model['identity']}"):
             open_whitelist_dialog(connection, row, f"whitelist_{page_key}_{model['identity']}")
 
@@ -391,7 +401,7 @@ def whitelist_rules_page(connection) -> None:
         return
     selected = rules[selected_rows[0]]
     st.subheader("Rule details")
-    st.json(selected, expanded=False)
+    st.json(selected, expanded=ROW_DETAIL_JSON_EXPANDED)
     if not selected.get("active"):
         st.info("This rule is already inactive.")
         return

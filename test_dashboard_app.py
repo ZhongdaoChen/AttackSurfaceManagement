@@ -41,6 +41,13 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.subscription_account_owner({}), "")
         self.assertEqual(app.subscription_account_owner({"tag_emails": "owner@example.com"}), "owner@example.com")
 
+    def test_display_date_only_removes_time(self):
+        import asm_dashboard.app as app
+
+        self.assertEqual(app.display_date_only("2026-08-14T10:00:00+08:00"), "2026-08-14")
+        self.assertEqual(app.display_date_only("2026-08-14 10:00:00"), "2026-08-14")
+        self.assertEqual(app.display_date_only(None), "")
+
     def test_finding_row_model_uses_expand_button_and_row_detail_key(self):
         import asm_dashboard.app as app
 
@@ -71,6 +78,11 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertGreaterEqual(app.TABLE_SCROLL_HEIGHT, 4800)
         self.assertLessEqual(app.TABLE_SCROLL_HEIGHT, 5600)
+
+    def test_row_detail_json_expands_by_default(self):
+        import asm_dashboard.app as app
+
+        self.assertTrue(app.ROW_DETAIL_JSON_EXPANDED)
 
     def test_kpi_labels_include_resolved_this_quarter(self):
         import asm_dashboard.app as app
