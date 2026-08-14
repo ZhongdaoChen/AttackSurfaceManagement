@@ -24,13 +24,16 @@ EXPOSURE_TREND_COLORS = {
 }
 EXPOSURE_TREND_TITLE = "Exposure Trend"
 KPI_LABELS = [
-    ("Active Findings", "active_findings"),
+    ("Active Attack Surface", "active_findings"),
     ("Active High", "active_high"),
     ("New Latest Scan", "new_latest_scan"),
     ("Resolved This Quarter", "resolved_this_quarter"),
     ("Sensitive Exposure 80/443", "sensitive_exposure_80_443"),
     ("Current Non-standard Ports", "current_non_standard_ports"),
 ]
+KPI_STYLES = {
+    "active_high": {"color": "#d62728", "font_weight": "700"},
+}
 
 
 def require_login() -> bool:
@@ -102,7 +105,20 @@ def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> 
 def render_kpis(kpis: dict[str, int]) -> None:
     cols = st.columns(3)
     for index, (label, key) in enumerate(KPI_LABELS):
-        cols[index % 3].metric(label, kpis.get(key, 0))
+        value = kpis.get(key, 0)
+        style = KPI_STYLES.get(key)
+        if style:
+            cols[index % 3].markdown(
+                f"""
+                <div data-testid="metric-container">
+                    <label>{label}</label>
+                    <div style="color: {style['color']}; font-weight: {style['font_weight']}; font-size: 2rem;">{value}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            cols[index % 3].metric(label, value)
 
 
 def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[dict[str, Any]]) -> None:

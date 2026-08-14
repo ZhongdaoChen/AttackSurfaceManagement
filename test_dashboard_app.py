@@ -89,8 +89,15 @@ class DashboardAppTests(unittest.TestCase):
 
         labels = [label for label, _key in app.KPI_LABELS]
 
+        self.assertIn("Active Attack Surface", labels)
+        self.assertNotIn("Active Findings", labels)
         self.assertIn("Resolved This Quarter", labels)
         self.assertNotIn("Resolved Latest Scan", labels)
+
+    def test_active_high_kpi_style_is_red_and_bold(self):
+        import asm_dashboard.app as app
+
+        self.assertEqual(app.KPI_STYLES["active_high"], {"color": "#d62728", "font_weight": "700"})
 
     def test_exposure_trend_title_and_color(self):
         import asm_dashboard.app as app

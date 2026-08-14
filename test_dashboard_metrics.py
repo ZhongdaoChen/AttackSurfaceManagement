@@ -22,8 +22,15 @@ class DashboardMetricsTests(unittest.TestCase):
                 "port": 9200,
             },
             {
+                "finding_key": "low-sensitive-port",
+                "risk_level": "low",
+                "first_seen_scan_id": "scan-2",
+                "check_id": "llm_sensitive_content",
+                "port": 443,
+            },
+            {
                 "finding_key": "c",
-                "risk_level": "medium",
+                "risk_level": "high",
                 "first_seen_scan_id": "scan-2",
                 "check_id": "llm_sensitive_content",
                 "port": 8080,
@@ -32,9 +39,9 @@ class DashboardMetricsTests(unittest.TestCase):
 
         result = metrics.current_kpis(rows, latest_scan_id="scan-2", resolved_this_quarter=4)
 
-        self.assertEqual(result["active_findings"], 3)
-        self.assertEqual(result["active_high"], 1)
-        self.assertEqual(result["new_latest_scan"], 2)
+        self.assertEqual(result["active_findings"], 4)
+        self.assertEqual(result["active_high"], 2)
+        self.assertEqual(result["new_latest_scan"], 3)
         self.assertEqual(result["resolved_this_quarter"], 4)
         self.assertEqual(result["sensitive_exposure_80_443"], 1)
         self.assertEqual(result["current_non_standard_ports"], 1)

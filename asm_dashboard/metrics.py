@@ -19,7 +19,9 @@ def current_kpis(
         "sensitive_exposure_80_443": sum(
             1
             for row in rows
-            if row.get("check_id") == "llm_sensitive_content" and row.get("port") in (80, 443)
+            if str(row.get("risk_level") or "").lower() == "high"
+            and row.get("check_id") == "llm_sensitive_content"
+            and row.get("port") in (80, 443)
         ),
         "current_non_standard_ports": sum(1 for row in rows if row.get("check_id") == "non_standard_open_port"),
     }
