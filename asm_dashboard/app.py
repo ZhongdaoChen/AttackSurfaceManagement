@@ -107,7 +107,9 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
         if trend.empty:
             st.info("No trend data available.")
         else:
-            st.plotly_chart(px.line(trend, x="date", y="count", color="metric", markers=True), use_container_width=True)
+            figure = px.line(trend, x="date", y="count", color="metric", markers=True)
+            figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
+            st.plotly_chart(figure, use_container_width=True)
     with right:
         st.subheader("Risk distribution")
         risk = metrics.distribution(current_rows, "risk_level")
@@ -150,6 +152,27 @@ def table_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+def row_summary_markdown(row: dict[str, Any]) -> str:
+    endpoint = metrics.endpoint_link(row.get("endpoint_name"))
+    wiz = metrics.wiz_link(row.get("wiz_link")) or ""
+    fields = [
+        f"**Endpoint Name:** {endpoint}",
+        f"**Port:** {row.get('port') or ''}",
+        f"**Cloud Platform:** {row.get('cloud_platform') or ''}",
+        f"**Cloud Account Name:** {row.get('cloud_account_name') or ''}",
+        f"**Risk Level:** {row.get('risk_level') or ''}",
+        f"**Evidence:** {row.get('evidence') or ''}",
+        f"**First Seen At:** {row.get('first_seen_at') or ''}",
+    ]
+    if wiz:
+        fields.append(f"**Wiz Link:** {wiz}")
+    return " | ".join(fields)
+
+
+def row_identity(row: dict[str, Any], index: int) -> str:
+    return str(row.get("finding_key") or row.get("id") or f"row-{index}")
+
+
 def render_page_controls(total: int, key: str) -> int:
     page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return int(st.number_input("Page", min_value=1, max_value=page_count, value=1, step=1, key=key))
@@ -165,31 +188,9 @@ def selected_row_indices(selection: Any) -> list[int]:
     return list(rows)
 
 
-def render_current_table(connection, filters: db.FilterState) -> None:
-    total_probe = db.fetch_current_findings(connection, filters, page=1, page_size=PAGE_SIZE)
-    page = render_page_controls(total_probe.total, "current_page")
-    result = total_probe if page == 1 else db.fetch_current_findings(connection, filters, page=page, page_size=PAGE_SIZE)
-    st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
-    frame = table_frame(result.rows)
-    if frame.empty:
-        st.info("No current findings match the filters.")
-        return
-    visible = frame.drop(columns=["_row"])
-    selection = st.dataframe(
-        visible,
-        use_container_width=True,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-    )
-    selected_rows = selected_row_indices(selection)
-    if not selected_rows:
-        return
-    selected = frame.iloc[selected_rows[0]]["_row"]
-    st.subheader("Finding details")
-    st.json(selected, expanded=False)
-    with st.form("whitelist_selected"):
-        st.write(f"Whitelist `{selected.get('endpoint_name')}` port `{selected.get('port')}`")
+def render_whitelist_form(connection, row: dict[str, Any], form_key: str) -> None:
+    with st.form(form_key):
+        st.write(f"Whitelist `{row.get('endpoint_name')}` port `{row.get('port')}`")
         reason = st.text_area("Reason")
         operator_name = st.text_input("Operator name")
         submitted = st.form_submit_button("Confirm whitelist")
@@ -197,8 +198,8 @@ def render_current_table(connection, filters: db.FilterState) -> None:
         try:
             db.create_whitelist_rule(
                 connection,
-                endpoint_name=str(selected.get("endpoint_name") or ""),
-                port=selected.get("port"),
+                endpoint_name=str(row.get("endpoint_name") or ""),
+                port=row.get("port"),
                 reason=reason,
                 operator_name=operator_name,
             )
@@ -207,6 +208,35 @@ def render_current_table(connection, filters: db.FilterState) -> None:
         else:
             st.success("Whitelist rule created and matching current/history findings updated.")
             st.rerun()
+
+
+def render_finding_list(connection, result: db.PageResult, page_key: str, allow_whitelist: bool) -> None:
+    st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
+    if not result.rows:
+        st.info("No findings match the filters.")
+        return
+    for index, row in enumerate(result.rows, start=1):
+        identity = row_identity(row, index)
+        with st.expander(row_summary_markdown(row), expanded=False):
+            endpoint = metrics.endpoint_link(row.get("endpoint_name"))
+            wiz = metrics.wiz_link(row.get("wiz_link"))
+            col1, col2 = st.columns(2)
+            col1.markdown(f"**Endpoint Name:** {endpoint}")
+            col2.markdown(f"**Wiz Link:** {wiz}" if wiz else "**Wiz Link:**")
+            st.json(row, expanded=False)
+            if allow_whitelist:
+                render_whitelist_form(connection, row, f"whitelist_{page_key}_{identity}")
+
+
+def current_page_value(key: str) -> int:
+    return max(1, int(st.session_state.get(key, 1)))
+
+
+def render_current_table(connection, filters: db.FilterState) -> None:
+    page = current_page_value("current_page")
+    result = db.fetch_current_findings(connection, filters, page=page, page_size=PAGE_SIZE)
+    render_finding_list(connection, result, "current_page", allow_whitelist=True)
+    render_page_controls(result.total, "current_page")
 
 
 def current_status_page(connection) -> None:
@@ -230,42 +260,18 @@ def historical_results_page(connection) -> None:
     selected_date = st.date_input("Scan date", value=datetime.date.today(), key="history_date")
     options = db.fetch_filter_options(connection, current_only=False)
     filters = filter_state(options, key_prefix="history")
-    total_probe = db.fetch_historical_findings(connection, selected_date, filters, page=1, page_size=PAGE_SIZE)
-    rows = total_probe.rows
+    page = current_page_value("history_page")
+    result = db.fetch_historical_findings(connection, selected_date, filters, page=page, page_size=PAGE_SIZE)
+    rows = result.rows
     high_count = sum(1 for row in rows if str(row.get("risk_level") or "").lower() == "high")
     whitelisted_count = sum(1 for row in rows if bool(row.get("whitelisted")))
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Scans on date", len({row.get("scan_id") for row in rows if row.get("scan_id")}))
-    col2.metric("Total findings", total_probe.total)
+    col2.metric("Total findings", result.total)
     col3.metric("High findings on page", high_count)
     col4.metric("Whitelisted on page", whitelisted_count)
-    page = render_page_controls(total_probe.total, "history_page")
-    result = (
-        total_probe
-        if page == 1
-        else db.fetch_historical_findings(connection, selected_date, filters, page=page, page_size=PAGE_SIZE)
-    )
-    st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
-    frame = table_frame(result.rows)
-    if frame.empty:
-        st.info("No historical findings match the filters.")
-        return
-    visible = frame.drop(columns=["_row"])
-    if "scan_id" not in visible.columns:
-        visible["scan_id"] = [row.get("scan_id") for row in result.rows]
-    if "scan_started_at" not in visible.columns:
-        visible["scan_started_at"] = [row.get("scan_started_at") for row in result.rows]
-    selection = st.dataframe(
-        visible,
-        use_container_width=True,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-    )
-    selected_rows = selected_row_indices(selection)
-    if selected_rows:
-        st.subheader("Historical finding details")
-        st.json(frame.iloc[selected_rows[0]]["_row"], expanded=False)
+    render_finding_list(connection, result, "history_page", allow_whitelist=False)
+    render_page_controls(result.total, "history_page")
 
 
 def whitelist_rules_page(connection) -> None:

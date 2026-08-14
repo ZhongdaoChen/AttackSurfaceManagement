@@ -47,6 +47,20 @@ class DashboardMetricsTests(unittest.TestCase):
         self.assertEqual(metrics.endpoint_link("app.example.com"), "app.example.com")
         self.assertEqual(metrics.endpoint_link(None), "")
 
+    def test_markdown_link_escapes_visible_label_without_changing_url(self):
+        self.assertEqual(
+            metrics.markdown_link("https://app.example.com/path_(test)", "https://app.example.com/path_(test)"),
+            "[https://app.example.com/path_\\(test\\)](https://app.example.com/path_(test))",
+        )
+        self.assertEqual(metrics.markdown_link("Wiz Link", ""), "")
+
+    def test_wiz_link_uses_fixed_visible_text(self):
+        self.assertEqual(
+            metrics.wiz_link("https://app.wiz.io/example"),
+            "[Wiz Link](https://app.wiz.io/example)",
+        )
+        self.assertEqual(metrics.wiz_link(None), "")
+
     def test_distribution_counts_top_values(self):
         rows = [{"risk_level": "high"}, {"risk_level": "high"}, {"risk_level": "low"}, {"risk_level": None}]
 

@@ -71,8 +71,21 @@ def distribution(rows: list[dict[str, Any]], key: str, limit: int = 10) -> pd.Da
     return pd.DataFrame(records[:limit], columns=[key, "count"])
 
 
+def markdown_link(label: Any, url: Any) -> str:
+    text = str(label or "").strip()
+    href = str(url or "").strip()
+    if not text or not href:
+        return ""
+    escaped = text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]").replace("(", "\\(").replace(")", "\\)")
+    return f"[{escaped}]({href})"
+
+
 def endpoint_link(endpoint_name: Any) -> str:
     text = str(endpoint_name or "").strip()
     if text.startswith(("http://", "https://")):
-        return f"[{text}]({text})"
+        return markdown_link(text, text)
     return text
+
+
+def wiz_link(wiz_url: Any) -> str:
+    return markdown_link("Wiz Link", wiz_url)
