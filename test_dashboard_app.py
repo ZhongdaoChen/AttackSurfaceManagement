@@ -119,7 +119,7 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.EXPOSURE_TREND_COLORS["High Risk"], "#d62728")
         self.assertEqual(app.EXPOSURE_TREND_COLORS["Mitigated"], "#1f77b4")
 
-    def test_exposure_trend_uses_separate_y_axes(self):
+    def test_exposure_trend_uses_single_y_axis(self):
         import asm_dashboard.app as app
 
         trend = pd.DataFrame(
@@ -133,9 +133,8 @@ class DashboardAppTests(unittest.TestCase):
         axes = {trace.name: getattr(trace, "yaxis", "y") for trace in figure.data}
 
         self.assertEqual(axes["Mitigated"], "y")
-        self.assertEqual(axes["High Risk"], "y2")
-        self.assertEqual(figure.layout.yaxis.title.text, "Mitigated")
-        self.assertEqual(figure.layout.yaxis2.title.text, "High Risk")
+        self.assertEqual(axes["High Risk"], "y")
+        self.assertEqual(figure.layout.yaxis.title.text, "Count")
 
     def test_chart_section_divider_separates_kpis_from_trends(self):
         import asm_dashboard.app as app

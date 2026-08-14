@@ -13,7 +13,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 
 from asm_dashboard import auth, db, metrics
 from assess_attack_surface import load_dotenv
@@ -127,8 +126,8 @@ def render_kpis(kpis: dict[str, int]) -> None:
 
 
 def exposure_trend_figure(trend: pd.DataFrame):
-    figure = make_subplots(specs=[[{"secondary_y": True}]])
-    for metric, secondary_y in (("Mitigated", False), ("High Risk", True)):
+    figure = go.Figure()
+    for metric in ("High Risk", "Mitigated"):
         subset = trend[trend["metric"] == metric]
         if subset.empty:
             continue
@@ -140,14 +139,13 @@ def exposure_trend_figure(trend: pd.DataFrame):
                 name=metric,
                 marker={"color": EXPOSURE_TREND_COLORS[metric]},
                 line={"color": EXPOSURE_TREND_COLORS[metric]},
+                yaxis="y",
                 customdata=subset[["scan_id"]],
                 hovertemplate="%{x}<br>%{fullData.name}: %{y}<br>scan_id: %{customdata[0]}<extra></extra>",
-            ),
-            secondary_y=secondary_y,
+            )
         )
     figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
-    figure.update_yaxes(title_text="Mitigated", secondary_y=False)
-    figure.update_yaxes(title_text="High Risk", secondary_y=True)
+    figure.update_yaxes(title_text="Count")
     return figure
 
 
