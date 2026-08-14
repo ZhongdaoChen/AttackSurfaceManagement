@@ -1,0 +1,239 @@
+from __future__ import annotations
+
+import datetime
+from typing import Any
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+from asm_dashboard import auth, db, metrics
+from assess_attack_surface import load_dotenv
+
+
+PAGE_SIZE = 200
+
+
+def require_login() -> bool:
+    load_dotenv()
+    if not auth.password_configured():
+        st.error("DASHBOARD_PASSWORD is not configured. Dashboard access is disabled.")
+        return False
+    if st.session_state.get("authenticated"):
+        return True
+    with st.form("login_form"):
+        password = st.text_input("Dashboard password", type="password")
+        submitted = st.form_submit_button("Sign in")
+    if submitted and auth.password_matches(password):
+        st.session_state["authenticated"] = True
+        st.rerun()
+    if submitted:
+        st.error("Invalid password.")
+    return False
+
+
+def get_connection():
+    load_dotenv()
+    if not db.configured():
+        st.error("RDS configuration is incomplete. Set RDS_HOST, RDS_DB, RDS_USER, and RDS_PASSWORD.")
+        st.stop()
+    return db.connect()
+
+
+def sidebar_page() -> str:
+    st.sidebar.title("ASM Dashboard")
+    return st.sidebar.radio("Navigation", ["Current Status", "Historical Results", "Whitelist Rules"])
+
+
+def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> db.FilterState:
+    with st.expander("Filters", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            risk_levels = st.multiselect("Risk Level", options.get("risk_levels", []), key=f"{key_prefix}_risk")
+            ports = st.multiselect("Port", options.get("ports", []), key=f"{key_prefix}_port")
+        with col2:
+            cloud_platforms = st.multiselect(
+                "Cloud Platform", options.get("cloud_platforms", []), key=f"{key_prefix}_platform"
+            )
+            cloud_accounts = st.multiselect(
+                "Cloud Account Name", options.get("cloud_accounts", []), key=f"{key_prefix}_account"
+            )
+        with col3:
+            check_ids = st.multiselect("Check ID", options.get("check_ids", []), key=f"{key_prefix}_check")
+            exposure_levels = st.multiselect(
+                "Exposure Level", options.get("exposure_levels", []), key=f"{key_prefix}_exposure"
+            )
+        search = st.text_input("Endpoint or host search", key=f"{key_prefix}_search")
+        date_range = st.date_input("First Seen date range", value=(), key=f"{key_prefix}_first_seen")
+    first_seen_start = date_range[0] if isinstance(date_range, tuple) and len(date_range) >= 1 else None
+    first_seen_end = date_range[1] if isinstance(date_range, tuple) and len(date_range) >= 2 else None
+    return db.FilterState(
+        risk_levels=list(risk_levels),
+        ports=list(ports),
+        cloud_platforms=list(cloud_platforms),
+        cloud_accounts=list(cloud_accounts),
+        check_ids=list(check_ids),
+        exposure_levels=list(exposure_levels),
+        search=search,
+        first_seen_start=first_seen_start,
+        first_seen_end=first_seen_end,
+    )
+
+
+def render_kpis(kpis: dict[str, int]) -> None:
+    labels = [
+        ("Active Findings", "active_findings"),
+        ("Active High", "active_high"),
+        ("New Latest Scan", "new_latest_scan"),
+        ("Resolved Latest Scan", "resolved_latest_scan"),
+        ("Sensitive Exposure 80/443", "sensitive_exposure_80_443"),
+        ("Current Non-standard Ports", "current_non_standard_ports"),
+    ]
+    cols = st.columns(3)
+    for index, (label, key) in enumerate(labels):
+        cols[index % 3].metric(label, kpis.get(key, 0))
+
+
+def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[dict[str, Any]]) -> None:
+    trend = metrics.trend_frame(trend_rows)
+    left, right = st.columns([2, 1])
+    with left:
+        st.subheader("Exposure trend")
+        if trend.empty:
+            st.info("No trend data available.")
+        else:
+            st.plotly_chart(px.line(trend, x="date", y="count", color="metric", markers=True), use_container_width=True)
+    with right:
+        st.subheader("Risk distribution")
+        risk = metrics.distribution(current_rows, "risk_level")
+        if risk.empty:
+            st.info("No risk distribution data.")
+        else:
+            st.plotly_chart(px.pie(risk, names="risk_level", values="count"), use_container_width=True)
+    col1, col2, col3 = st.columns(3)
+    for column, title, key in [
+        (col1, "Cloud Accounts", "cloud_account_name"),
+        (col2, "Cloud Platforms", "cloud_platform"),
+        (col3, "Top Check IDs", "check_id"),
+    ]:
+        with column:
+            st.subheader(title)
+            frame = metrics.distribution(current_rows, key)
+            if frame.empty:
+                st.info("No data.")
+            else:
+                st.plotly_chart(px.bar(frame, x=key, y="count"), use_container_width=True)
+
+
+def table_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    records = []
+    for row in rows:
+        records.append(
+            {
+                "Endpoint Name": metrics.endpoint_link(row.get("endpoint_name")),
+                "Port": row.get("port"),
+                "Cloud Platform": row.get("cloud_platform"),
+                "Cloud Account Name": row.get("cloud_account_name"),
+                "Risk Level": row.get("risk_level"),
+                "Evidence": row.get("evidence"),
+                "First Seen At": row.get("first_seen_at"),
+                "Check ID": row.get("check_id"),
+                "Exposure Level": row.get("exposure_level"),
+                "_row": row,
+            }
+        )
+    return pd.DataFrame(records)
+
+
+def render_page_controls(total: int, key: str) -> int:
+    page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    return int(st.number_input("Page", min_value=1, max_value=page_count, value=1, step=1, key=key))
+
+
+def selected_row_indices(selection: Any) -> list[int]:
+    if isinstance(selection, dict):
+        return list(selection.get("selection", {}).get("rows", []))
+    selection_obj = getattr(selection, "selection", None)
+    if selection_obj is None:
+        return []
+    rows = getattr(selection_obj, "rows", [])
+    return list(rows)
+
+
+def render_current_table(connection, filters: db.FilterState) -> None:
+    total_probe = db.fetch_current_findings(connection, filters, page=1, page_size=PAGE_SIZE)
+    page = render_page_controls(total_probe.total, "current_page")
+    result = total_probe if page == 1 else db.fetch_current_findings(connection, filters, page=page, page_size=PAGE_SIZE)
+    st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
+    frame = table_frame(result.rows)
+    if frame.empty:
+        st.info("No current findings match the filters.")
+        return
+    visible = frame.drop(columns=["_row"])
+    selection = st.dataframe(
+        visible,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+    selected_rows = selected_row_indices(selection)
+    if not selected_rows:
+        return
+    selected = frame.iloc[selected_rows[0]]["_row"]
+    st.subheader("Finding details")
+    st.json(selected, expanded=False)
+    with st.form("whitelist_selected"):
+        st.write(f"Whitelist `{selected.get('endpoint_name')}` port `{selected.get('port')}`")
+        reason = st.text_area("Reason")
+        operator_name = st.text_input("Operator name")
+        submitted = st.form_submit_button("Confirm whitelist")
+    if submitted:
+        try:
+            db.create_whitelist_rule(
+                connection,
+                endpoint_name=str(selected.get("endpoint_name") or ""),
+                port=selected.get("port"),
+                reason=reason,
+                operator_name=operator_name,
+            )
+        except Exception as exc:
+            st.error(f"Whitelist failed: {type(exc).__name__}: {exc}")
+        else:
+            st.success("Whitelist rule created and matching current/history findings updated.")
+            st.rerun()
+
+
+def current_status_page(connection) -> None:
+    st.title("ASM Current Status")
+    st.caption("Executive view of active, non-whitelisted attack surface findings.")
+    latest = db.fetch_latest_scan(connection)
+    latest_scan_id = latest.get("scan_id") if latest else None
+    current_rows = db.fetch_current_kpi_rows(connection)
+    resolved_latest_scan = db.fetch_resolved_count_for_scan(connection, latest_scan_id)
+    kpis = metrics.current_kpis(current_rows, latest_scan_id=latest_scan_id, resolved_latest_scan=resolved_latest_scan)
+    render_kpis(kpis)
+    render_current_charts(current_rows, db.fetch_trend_rows(connection))
+    options = db.fetch_filter_options(connection, current_only=True)
+    filters = filter_state(options, key_prefix="current")
+    render_current_table(connection, filters)
+
+
+def main() -> None:
+    st.set_page_config(page_title="ASM Dashboard", layout="wide")
+    if not require_login():
+        return
+    connection = get_connection()
+    page = sidebar_page()
+    if page == "Current Status":
+        current_status_page(connection)
+    elif page == "Historical Results":
+        st.title("Historical Results")
+        st.info("Historical Results will be implemented in the next task.")
+    else:
+        st.title("Whitelist Rules")
+        st.info("Whitelist Rules will be implemented in the next task.")
+
+
+if __name__ == "__main__":
+    main()
