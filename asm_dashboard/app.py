@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import datetime
+import os
+import sys
 from typing import Any
+
+if __package__ in (None, ""):
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import plotly.express as px
