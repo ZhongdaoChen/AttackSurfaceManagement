@@ -24,6 +24,15 @@ class DashboardMetricsTests(unittest.TestCase):
                 "port": 9200,
             },
             {
+                "finding_key": "whitelisted-non-standard",
+                "risk_level": "high",
+                "first_seen_scan_id": "scan-2",
+                "first_seen_at": "2026-08-11T10:00:00+08:00",
+                "check_id": "non_standard_open_port",
+                "port": 9201,
+                "whitelisted": True,
+            },
+            {
                 "finding_key": "low-sensitive-port",
                 "risk_level": "low",
                 "first_seen_scan_id": "scan-2",

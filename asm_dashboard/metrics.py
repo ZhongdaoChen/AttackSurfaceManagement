@@ -11,23 +11,24 @@ def current_kpis(
     newly_identified_since: datetime.date,
     resolved_this_quarter: int = 0,
 ) -> dict[str, int]:
+    active_rows = [row for row in rows if not bool(row.get("whitelisted"))]
     return {
-        "active_findings": len(rows),
-        "active_high": sum(1 for row in rows if str(row.get("risk_level") or "").lower() == "high"),
+        "active_findings": len(active_rows),
+        "active_high": sum(1 for row in active_rows if str(row.get("risk_level") or "").lower() == "high"),
         "newly_identified_this_month": sum(
             1
-            for row in rows
+            for row in active_rows
             if (first_seen := _as_date(row.get("first_seen_at"))) is not None and first_seen >= newly_identified_since
         ),
         "resolved_this_quarter": int(resolved_this_quarter),
         "sensitive_exposure_80_443": sum(
             1
-            for row in rows
+            for row in active_rows
             if str(row.get("risk_level") or "").lower() == "high"
             and row.get("check_id") == "llm_sensitive_content"
             and row.get("port") in (80, 443)
         ),
-        "current_non_standard_ports": sum(1 for row in rows if row.get("check_id") == "non_standard_open_port"),
+        "current_non_standard_ports": sum(1 for row in active_rows if row.get("check_id") == "non_standard_open_port"),
     }
 
 
