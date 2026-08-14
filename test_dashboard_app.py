@@ -52,6 +52,18 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(model["wiz_label"], "Wiz Link")
         self.assertEqual(model["wiz_url"], "https://app.wiz.io/example")
 
+    def test_expand_icon_uses_right_and_down_triangles(self):
+        import asm_dashboard.app as app
+
+        self.assertEqual(app.expand_icon(expanded=False), "▶")
+        self.assertEqual(app.expand_icon(expanded=True), "▼")
+
+    def test_table_scroll_height_targets_about_one_hundred_rows(self):
+        import asm_dashboard.app as app
+
+        self.assertGreaterEqual(app.TABLE_SCROLL_HEIGHT, 4800)
+        self.assertLessEqual(app.TABLE_SCROLL_HEIGHT, 5600)
+
     def test_kpi_labels_include_resolved_this_quarter(self):
         import asm_dashboard.app as app
 

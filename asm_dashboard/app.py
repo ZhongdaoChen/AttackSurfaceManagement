@@ -17,6 +17,7 @@ from assess_attack_surface import load_dotenv
 
 
 PAGE_SIZE = 200
+TABLE_SCROLL_HEIGHT = 5200
 KPI_LABELS = [
     ("Active Findings", "active_findings"),
     ("Active High", "active_high"),
@@ -194,6 +195,10 @@ def finding_row_model(row: dict[str, Any], page_key: str, index: int) -> dict[st
     }
 
 
+def expand_icon(expanded: bool) -> str:
+    return "▼" if expanded else "▶"
+
+
 def open_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> None:
     @st.dialog("Add to whitelist")
     def whitelist_dialog() -> None:
@@ -248,7 +253,8 @@ def render_table_header() -> None:
 def render_finding_row(connection, row: dict[str, Any], page_key: str, index: int, allow_whitelist: bool) -> None:
     model = finding_row_model(row, page_key, index)
     columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.0, 2.4, 1.5, 0.9])
-    if columns[0].button("Expand", key=model["expand_key"]):
+    is_expanded = st.session_state.get(model["expanded_state_key"]) == model["identity"]
+    if columns[0].button(expand_icon(is_expanded), key=model["expand_key"], help="Expand row details"):
         current = st.session_state.get(model["expanded_state_key"])
         st.session_state[model["expanded_state_key"]] = None if current == model["identity"] else model["identity"]
         st.rerun()
@@ -274,9 +280,23 @@ def render_finding_table(connection, result: db.PageResult, page_key: str, allow
     if not result.rows:
         st.info("No findings match the filters.")
         return
-    render_table_header()
-    for index, row in enumerate(result.rows, start=1):
-        render_finding_row(connection, row, page_key, index, allow_whitelist)
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            overflow-x: auto;
+        }
+        div[data-testid="stHorizontalBlock"] {
+            min-width: 1700px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.container(height=TABLE_SCROLL_HEIGHT):
+        render_table_header()
+        for index, row in enumerate(result.rows, start=1):
+            render_finding_row(connection, row, page_key, index, allow_whitelist)
 
 
 def current_page_value(key: str) -> int:
