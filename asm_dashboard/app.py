@@ -24,6 +24,7 @@ EXPOSURE_TREND_COLORS = {
     "Mitigated": "#1f77b4",
 }
 EXPOSURE_TREND_TITLE = "Exposure Trend"
+CHART_SECTION_DIVIDER_HTML = '<div style="width: 100%; border-top: 1px solid #e5e7eb; margin: 2rem 0 1.5rem 0;"></div>'
 KPI_LABELS = [
     ("Active Attack Surface", "active_findings"),
     ("Active High", "active_high"),
@@ -373,6 +374,7 @@ def current_status_page(connection) -> None:
         resolved_this_quarter=resolved_this_quarter,
     )
     render_kpis(kpis)
+    st.markdown(CHART_SECTION_DIVIDER_HTML, unsafe_allow_html=True)
     render_current_charts(current_rows, db.fetch_trend_rows(connection))
     options = db.fetch_filter_options(connection, current_only=True)
     filters = filter_state(options, key_prefix="current")

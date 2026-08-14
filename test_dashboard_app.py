@@ -108,6 +108,13 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.EXPOSURE_TREND_COLORS["High Risk"], "#d62728")
         self.assertEqual(app.EXPOSURE_TREND_COLORS["Mitigated"], "#1f77b4")
 
+    def test_chart_section_divider_separates_kpis_from_trends(self):
+        import asm_dashboard.app as app
+
+        self.assertIn("border-top", app.CHART_SECTION_DIVIDER_HTML)
+        self.assertIn("margin: 2rem 0 1.5rem 0", app.CHART_SECTION_DIVIDER_HTML)
+        self.assertIn("width: 100%", app.CHART_SECTION_DIVIDER_HTML)
+
     def test_app_file_path_execution_can_import_dashboard_package(self):
         env = os.environ.copy()
         env.pop("DASHBOARD_PASSWORD", None)
