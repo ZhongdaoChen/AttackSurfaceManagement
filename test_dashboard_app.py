@@ -4,6 +4,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 
 class DashboardAppTests(unittest.TestCase):
     def test_app_module_imports(self):
@@ -116,6 +118,24 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.EXPOSURE_TREND_TITLE, "Exposure Trend")
         self.assertEqual(app.EXPOSURE_TREND_COLORS["High Risk"], "#d62728")
         self.assertEqual(app.EXPOSURE_TREND_COLORS["Mitigated"], "#1f77b4")
+
+    def test_exposure_trend_uses_separate_y_axes(self):
+        import asm_dashboard.app as app
+
+        trend = pd.DataFrame(
+            [
+                {"date": "2026-08-14", "scan_id": "scan-1", "metric": "High Risk", "count": 120},
+                {"date": "2026-08-14", "scan_id": "scan-1", "metric": "Mitigated", "count": 3},
+            ]
+        )
+
+        figure = app.exposure_trend_figure(trend)
+        axes = {trace.name: getattr(trace, "yaxis", "y") for trace in figure.data}
+
+        self.assertEqual(axes["Mitigated"], "y")
+        self.assertEqual(axes["High Risk"], "y2")
+        self.assertEqual(figure.layout.yaxis.title.text, "Mitigated")
+        self.assertEqual(figure.layout.yaxis2.title.text, "High Risk")
 
     def test_chart_section_divider_separates_kpis_from_trends(self):
         import asm_dashboard.app as app

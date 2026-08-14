@@ -11,7 +11,9 @@ if __package__ in (None, ""):
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 from asm_dashboard import auth, db, metrics
 from assess_attack_surface import load_dotenv
@@ -124,6 +126,31 @@ def render_kpis(kpis: dict[str, int]) -> None:
             cols[index % 3].metric(label, value)
 
 
+def exposure_trend_figure(trend: pd.DataFrame):
+    figure = make_subplots(specs=[[{"secondary_y": True}]])
+    for metric, secondary_y in (("Mitigated", False), ("High Risk", True)):
+        subset = trend[trend["metric"] == metric]
+        if subset.empty:
+            continue
+        figure.add_trace(
+            go.Scatter(
+                x=subset["date"],
+                y=subset["count"],
+                mode="lines+markers",
+                name=metric,
+                marker={"color": EXPOSURE_TREND_COLORS[metric]},
+                line={"color": EXPOSURE_TREND_COLORS[metric]},
+                customdata=subset[["scan_id"]],
+                hovertemplate="%{x}<br>%{fullData.name}: %{y}<br>scan_id: %{customdata[0]}<extra></extra>",
+            ),
+            secondary_y=secondary_y,
+        )
+    figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
+    figure.update_yaxes(title_text="Mitigated", secondary_y=False)
+    figure.update_yaxes(title_text="High Risk", secondary_y=True)
+    return figure
+
+
 def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[dict[str, Any]]) -> None:
     trend = metrics.trend_frame(trend_rows)
     left, right = st.columns([2, 1])
@@ -132,17 +159,7 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
         if trend.empty:
             st.info("No trend data available.")
         else:
-            figure = px.line(
-                trend,
-                x="date",
-                y="count",
-                color="metric",
-                markers=True,
-                hover_data=["scan_id"],
-                color_discrete_map=EXPOSURE_TREND_COLORS,
-            )
-            figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
-            st.plotly_chart(figure, use_container_width=True)
+            st.plotly_chart(exposure_trend_figure(trend), use_container_width=True)
     with right:
         st.subheader("Risk distribution")
         risk = metrics.distribution(current_rows, "risk_level")
