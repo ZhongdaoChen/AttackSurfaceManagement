@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 
 class DashboardAppTests(unittest.TestCase):
@@ -9,6 +10,14 @@ class DashboardAppTests(unittest.TestCase):
         import asm_dashboard.app as app
 
         self.assertTrue(callable(app.main))
+
+    def test_whitelist_rules_page_does_not_use_streamlit_dataframe(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def whitelist_rules_page")
+        end = source.index("\n\ndef main", start)
+        body = source[start:end]
+
+        self.assertNotIn("st.dataframe", body)
 
     def test_table_records_include_expand_raw_endpoint_and_link_urls(self):
         import asm_dashboard.app as app

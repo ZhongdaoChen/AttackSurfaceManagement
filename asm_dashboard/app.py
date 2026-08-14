@@ -418,40 +418,50 @@ def whitelist_rules_page(connection) -> None:
     if not rules:
         st.info("No whitelist rules have been created.")
         return
-    frame = pd.DataFrame(rules)
-    selection = st.dataframe(
-        frame,
-        use_container_width=True,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-    )
-    selected_rows = selected_row_indices(selection)
-    if not selected_rows:
-        return
-    selected = rules[selected_rows[0]]
-    st.subheader("Rule details")
-    st.json(selected, expanded=ROW_DETAIL_JSON_EXPANDED)
-    if not selected.get("active"):
-        st.info("This rule is already inactive.")
-        return
-    with st.form("deactivate_rule"):
-        operator_name = st.text_input("Operator name")
-        reason = st.text_area("Deactivation reason")
-        submitted = st.form_submit_button("Deactivate rule")
-    if submitted:
-        try:
-            db.deactivate_whitelist_rule(
-                connection,
-                rule_id=int(selected["id"]),
-                operator_name=operator_name,
-                reason=reason,
-            )
-        except Exception as exc:
-            st.error(f"Deactivate failed: {type(exc).__name__}: {exc}")
-        else:
-            st.success("Whitelist rule deactivated. Existing whitelisted findings were not reverted.")
+    header = st.columns([0.8, 2.8, 0.8, 1.0, 2.4, 1.5, 1.5])
+    for column, title in zip(
+        header,
+        ["Details", "Endpoint Name", "Port", "Active", "Reason", "Operator Name", "Created At"],
+        strict=True,
+    ):
+        column.markdown(f"**{title}**")
+    for index, rule in enumerate(rules, start=1):
+        identity = str(rule.get("id") or index)
+        expanded_key = "expanded_whitelist_rule"
+        columns = st.columns([0.8, 2.8, 0.8, 1.0, 2.4, 1.5, 1.5])
+        is_expanded = st.session_state.get(expanded_key) == identity
+        if columns[0].button(expand_icon(is_expanded), key=f"expand_whitelist_rule_{identity}"):
+            st.session_state[expanded_key] = None if is_expanded else identity
             st.rerun()
+        columns[1].write(rule.get("endpoint_name") or "")
+        columns[2].write(rule.get("port") or "")
+        columns[3].write("Yes" if rule.get("active") else "No")
+        columns[4].write(rule.get("reason") or "")
+        columns[5].write(rule.get("operator_name") or "")
+        columns[6].write(display_date_only(rule.get("created_at")))
+        if st.session_state.get(expanded_key) != identity:
+            continue
+        st.json(rule, expanded=ROW_DETAIL_JSON_EXPANDED)
+        if not rule.get("active"):
+            st.info("This rule is already inactive.")
+            continue
+        with st.form(f"deactivate_rule_{identity}"):
+            operator_name = st.text_input("Operator name")
+            reason = st.text_area("Deactivation reason")
+            submitted = st.form_submit_button("Deactivate rule")
+        if submitted:
+            try:
+                db.deactivate_whitelist_rule(
+                    connection,
+                    rule_id=int(rule["id"]),
+                    operator_name=operator_name,
+                    reason=reason,
+                )
+            except Exception as exc:
+                st.error(f"Deactivate failed: {type(exc).__name__}: {exc}")
+            else:
+                st.success("Whitelist rule deactivated. Existing whitelisted findings were not reverted.")
+                st.rerun()
 
 
 def main() -> None:
