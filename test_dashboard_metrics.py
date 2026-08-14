@@ -68,51 +68,19 @@ class DashboardMetricsTests(unittest.TestCase):
 
         self.assertEqual(frame.to_dict("records"), [{"risk_level": "high", "count": 2}, {"risk_level": "low", "count": 1}])
 
-    def test_trend_frame_builds_high_risk_stock_and_resolved_high_risk_lines(self):
+    def test_trend_frame_uses_scan_dates_and_high_risk_counts(self):
         rows = [
-            {
-                "first_seen_at": datetime.datetime(2026, 8, 12, 10, 0),
-                "resolved_at": None,
-                "risk_level": "high",
-                "check_id": "llm_sensitive_content",
-                "port": 443,
-            },
-            {
-                "first_seen_at": "2026-08-13T12:00:00+08:00",
-                "resolved_at": "2026-08-14T12:00:00+08:00",
-                "risk_level": "high",
-                "check_id": "non_standard_open_port",
-                "port": 9200,
-            },
-            {
-                "first_seen_at": "2026-08-13T12:00:00+08:00",
-                "resolved_at": "2026-08-14T12:00:00+08:00",
-                "risk_level": "low",
-                "check_id": "non_standard_open_port",
-                "port": 9200,
-            },
-            {
-                "first_seen_at": "2026-08-12T12:00:00+08:00",
-                "resolved_at": None,
-                "risk_level": "high",
-                "check_id": "llm_sensitive_content",
-                "port": 443,
-                "whitelisted": True,
-            },
+            {"scan_id": "scan-1", "scan_started_at": datetime.datetime(2026, 8, 12, 10, 0), "high_risk_count": 2},
+            {"scan_id": "scan-2", "scan_started_at": "2026-08-13T12:00:00+08:00", "high_risk_count": 5},
         ]
 
         frame = metrics.trend_frame(rows)
 
-        records = sorted(frame.to_dict("records"), key=lambda item: (str(item["date"]), item["metric"]))
         self.assertEqual(
-            records,
+            frame.to_dict("records"),
             [
-                {"date": datetime.date(2026, 8, 12), "metric": "High Risk", "count": 1},
-                {"date": datetime.date(2026, 8, 12), "metric": "Resolved High Risk", "count": 0},
-                {"date": datetime.date(2026, 8, 13), "metric": "High Risk", "count": 2},
-                {"date": datetime.date(2026, 8, 13), "metric": "Resolved High Risk", "count": 0},
-                {"date": datetime.date(2026, 8, 14), "metric": "High Risk", "count": 1},
-                {"date": datetime.date(2026, 8, 14), "metric": "Resolved High Risk", "count": 1},
+                {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "High Risk", "count": 2},
+                {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "High Risk", "count": 5},
             ],
         )
 

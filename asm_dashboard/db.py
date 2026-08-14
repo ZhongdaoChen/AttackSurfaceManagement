@@ -237,8 +237,16 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
     cursor = connection.cursor()
     cursor.execute(
         """
-        SELECT finding_key, first_seen_at, resolved_at, risk_level, check_id, port, whitelisted
-        FROM asm_current_findings
+        SELECT
+          s.scan_id,
+          s.started_at AS scan_started_at,
+          COUNT(f.id) AS high_risk_count
+        FROM asm_scans s
+        LEFT JOIN asm_findings f ON f.scan_id = s.scan_id
+          AND f.risk_level = 'high'
+          AND f.whitelisted = FALSE
+        GROUP BY s.scan_id, s.started_at
+        ORDER BY s.started_at ASC, s.scan_id ASC
         """,
         {},
     )

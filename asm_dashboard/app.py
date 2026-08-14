@@ -21,8 +21,8 @@ TABLE_SCROLL_HEIGHT = 5200
 ROW_DETAIL_JSON_EXPANDED = True
 EXPOSURE_TREND_COLORS = {
     "High Risk": "#d62728",
-    "Resolved High Risk": "#1f77b4",
 }
+EXPOSURE_TREND_TITLE = "Exposure Trend"
 KPI_LABELS = [
     ("Active Findings", "active_findings"),
     ("Active High", "active_high"),
@@ -109,7 +109,7 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
     trend = metrics.trend_frame(trend_rows)
     left, right = st.columns([2, 1])
     with left:
-        st.subheader("Exposure trend")
+        st.subheader(EXPOSURE_TREND_TITLE)
         if trend.empty:
             st.info("No trend data available.")
         else:
@@ -119,6 +119,7 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
                 y="count",
                 color="metric",
                 markers=True,
+                hover_data=["scan_id"],
                 color_discrete_map=EXPOSURE_TREND_COLORS,
             )
             figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
