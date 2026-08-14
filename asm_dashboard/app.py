@@ -158,6 +158,7 @@ def table_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "Port": row.get("port"),
                 "Cloud Platform": row.get("cloud_platform"),
                 "Cloud Account Name": row.get("cloud_account_name"),
+                "Subscription Account Owner": subscription_account_owner(row),
                 "Risk Level": row.get("risk_level"),
                 "Evidence": row.get("evidence"),
                 "First Seen At": row.get("first_seen_at"),
@@ -173,6 +174,13 @@ def table_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def table_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     records = table_records(rows)
     return pd.DataFrame(records)
+
+
+def subscription_account_owner(row: dict[str, Any]) -> str:
+    value = row.get("tag_emails")
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if item)
+    return str(value or "")
 
 
 def render_page_controls(total: int, key: str) -> int:
@@ -245,13 +253,14 @@ def render_link(label: str, url: str) -> None:
 
 
 def render_table_header() -> None:
-    columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.0, 2.4, 1.5, 0.9])
+    columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.8, 1.0, 2.4, 1.5, 0.9])
     headers = [
         "Expand",
         "Endpoint Name",
         "Port",
         "Cloud Platform",
         "Cloud Account Name",
+        "Subscription Account Owner",
         "Risk Level",
         "Evidence",
         "First Seen At",
@@ -263,7 +272,7 @@ def render_table_header() -> None:
 
 def render_finding_row(connection, row: dict[str, Any], page_key: str, index: int, allow_whitelist: bool) -> None:
     model = finding_row_model(row, page_key, index)
-    columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.0, 2.4, 1.5, 0.9])
+    columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.8, 1.0, 2.4, 1.5, 0.9])
     is_expanded = st.session_state.get(model["expanded_state_key"]) == model["identity"]
     if columns[0].button(expand_icon(is_expanded), key=model["expand_key"], help="Expand row details"):
         current = st.session_state.get(model["expanded_state_key"])
@@ -274,10 +283,11 @@ def render_finding_row(connection, row: dict[str, Any], page_key: str, index: in
     columns[2].write(row.get("port") or "")
     columns[3].write(row.get("cloud_platform") or "")
     columns[4].write(row.get("cloud_account_name") or "")
-    columns[5].write(row.get("risk_level") or "")
-    columns[6].write(row.get("evidence") or "")
-    columns[7].write(row.get("first_seen_at") or "")
-    with columns[8]:
+    columns[5].write(subscription_account_owner(row))
+    columns[6].write(row.get("risk_level") or "")
+    columns[7].write(row.get("evidence") or "")
+    columns[8].write(row.get("first_seen_at") or "")
+    with columns[9]:
         render_link(model["wiz_label"], model["wiz_url"])
     if st.session_state.get(model["expanded_state_key"]) == model["identity"]:
         st.markdown("---")

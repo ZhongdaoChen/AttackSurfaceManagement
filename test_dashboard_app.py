@@ -22,6 +22,7 @@ class DashboardAppTests(unittest.TestCase):
             "evidence": "Sensitive data exposed",
             "first_seen_at": "2026-08-14T10:00:00+08:00",
             "wiz_link": "https://app.wiz.io/example",
+            "tag_emails": ["owner@example.com", "security@example.com"],
         }
 
         records = app.table_records([row])
@@ -31,7 +32,14 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(records[0]["Endpoint Name"], "http://consumer-uat.adidas.com.cn:80/membership/adidas/cn")
         self.assertEqual(records[0]["Endpoint URL"], "http://consumer-uat.adidas.com.cn:80/membership/adidas/cn")
         self.assertEqual(records[0]["Wiz Link"], "https://app.wiz.io/example")
+        self.assertEqual(records[0]["Subscription Account Owner"], "owner@example.com, security@example.com")
         self.assertNotIn("[", records[0]["Endpoint Name"])
+
+    def test_subscription_account_owner_handles_missing_tag_emails(self):
+        import asm_dashboard.app as app
+
+        self.assertEqual(app.subscription_account_owner({}), "")
+        self.assertEqual(app.subscription_account_owner({"tag_emails": "owner@example.com"}), "owner@example.com")
 
     def test_finding_row_model_uses_expand_button_and_row_detail_key(self):
         import asm_dashboard.app as app
