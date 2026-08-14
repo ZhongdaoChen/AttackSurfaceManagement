@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import html
 import os
 import sys
 from typing import Any
@@ -281,6 +282,15 @@ def render_link(label: str, url: str) -> None:
         st.write(label)
 
 
+def evidence_cell_html(value: Any) -> str:
+    escaped = html.escape(str(value or ""))
+    return (
+        '<div style="display: -webkit-box; -webkit-line-clamp: 2; '
+        '-webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis;">'
+        f"{escaped}</div>"
+    )
+
+
 def render_table_header() -> None:
     columns = st.columns([0.7, 2.8, 0.7, 1.2, 1.6, 1.8, 1.0, 2.4, 1.5, 0.9])
     headers = [
@@ -314,7 +324,7 @@ def render_finding_row(connection, row: dict[str, Any], page_key: str, index: in
     columns[4].write(row.get("cloud_account_name") or "")
     columns[5].write(subscription_account_owner(row))
     columns[6].write(row.get("risk_level") or "")
-    columns[7].write(row.get("evidence") or "")
+    columns[7].markdown(evidence_cell_html(row.get("evidence")), unsafe_allow_html=True)
     columns[8].write(display_date_only(row.get("first_seen_at")))
     with columns[9]:
         render_link(model["wiz_label"], model["wiz_url"])

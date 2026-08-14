@@ -115,6 +115,15 @@ class DashboardAppTests(unittest.TestCase):
         self.assertIn("margin: 2rem 0 1.5rem 0", app.CHART_SECTION_DIVIDER_HTML)
         self.assertIn("width: 100%", app.CHART_SECTION_DIVIDER_HTML)
 
+    def test_evidence_cell_html_clamps_to_two_lines(self):
+        import asm_dashboard.app as app
+
+        html = app.evidence_cell_html("line one line two line three")
+
+        self.assertIn("-webkit-line-clamp: 2", html)
+        self.assertIn("overflow: hidden", html)
+        self.assertIn("line one line two line three", html)
+
     def test_app_file_path_execution_can_import_dashboard_package(self):
         env = os.environ.copy()
         env.pop("DASHBOARD_PASSWORD", None)
