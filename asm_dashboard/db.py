@@ -306,8 +306,17 @@ def create_whitelist_rule(connection, endpoint_name: str, port: int | None, reas
     )
     cursor.execute(
         """
+        WITH latest_scan AS (
+          SELECT scan_id
+          FROM asm_scans
+          ORDER BY started_at DESC, scan_id DESC
+          LIMIT 1
+        )
         UPDATE asm_current_findings
-        SET whitelisted = TRUE, updated_at = now()
+        SET whitelisted = TRUE,
+            resolved_at = now(),
+            resolved_scan_id = (SELECT scan_id FROM latest_scan),
+            updated_at = now()
         WHERE endpoint_name = %(endpoint_name)s
           AND COALESCE(port, -1) = COALESCE(%(port)s, -1)
         """,

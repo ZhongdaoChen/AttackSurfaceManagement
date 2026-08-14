@@ -149,6 +149,8 @@ class DashboardDbTests(unittest.TestCase):
         executed_sql = "\n".join(sql for sql, _params in connection.cursor_obj.executions)
         self.assertIn("INSERT INTO asm_whitelist_rules", executed_sql)
         self.assertIn("UPDATE asm_current_findings", executed_sql)
+        self.assertIn("resolved_at = now()", executed_sql)
+        self.assertIn("resolved_scan_id = (SELECT scan_id FROM latest_scan)", executed_sql)
         self.assertIn("UPDATE asm_findings", executed_sql)
         self.assertEqual(connection.commits, 1)
 
