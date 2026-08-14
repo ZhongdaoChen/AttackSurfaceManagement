@@ -39,24 +39,37 @@ def _as_date(value: Any) -> datetime.date | None:
         return None
 
 
+def _date_range(start: datetime.date, end: datetime.date) -> list[datetime.date]:
+    days = (end - start).days
+    return [start + datetime.timedelta(days=offset) for offset in range(days + 1)]
+
+
 def trend_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
-    events: list[dict[str, Any]] = []
+    high_risk_rows: list[tuple[datetime.date, datetime.date | None]] = []
     for row in rows:
+        if bool(row.get("whitelisted")):
+            continue
+        if str(row.get("risk_level") or "").lower() != "high":
+            continue
         first_seen = _as_date(row.get("first_seen_at"))
         resolved = _as_date(row.get("resolved_at"))
         if first_seen is not None:
-            events.append({"date": first_seen, "metric": "New", "count": 1})
-            if str(row.get("risk_level") or "").lower() == "high":
-                events.append({"date": first_seen, "metric": "New High", "count": 1})
-            if row.get("check_id") == "non_standard_open_port":
-                events.append({"date": first_seen, "metric": "Non-standard Port", "count": 1})
-            if row.get("check_id") == "llm_sensitive_content" and row.get("port") in (80, 443):
-                events.append({"date": first_seen, "metric": "Sensitive Exposure 80/443", "count": 1})
-        if resolved is not None:
-            events.append({"date": resolved, "metric": "Resolved", "count": 1})
-    if not events:
+            high_risk_rows.append((first_seen, resolved))
+    if not high_risk_rows:
         return pd.DataFrame(columns=["date", "metric", "count"])
-    return pd.DataFrame(events).groupby(["date", "metric"], as_index=False)["count"].sum()
+    dates = [first_seen for first_seen, _resolved in high_risk_rows]
+    dates.extend(resolved for _first_seen, resolved in high_risk_rows if resolved is not None)
+    records: list[dict[str, Any]] = []
+    for date in _date_range(min(dates), max(dates)):
+        active_high = sum(
+            1
+            for first_seen, resolved in high_risk_rows
+            if first_seen <= date and (resolved is None or resolved > date)
+        )
+        resolved_high = sum(1 for _first_seen, resolved in high_risk_rows if resolved == date)
+        records.append({"date": date, "metric": "High Risk", "count": active_high})
+        records.append({"date": date, "metric": "Resolved High Risk", "count": resolved_high})
+    return pd.DataFrame(records, columns=["date", "metric", "count"])
 
 
 def distribution(rows: list[dict[str, Any]], key: str, limit: int = 10) -> pd.DataFrame:

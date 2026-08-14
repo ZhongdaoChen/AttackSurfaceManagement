@@ -68,10 +68,10 @@ class DashboardMetricsTests(unittest.TestCase):
 
         self.assertEqual(frame.to_dict("records"), [{"risk_level": "high", "count": 2}, {"risk_level": "low", "count": 1}])
 
-    def test_trend_frame_groups_new_resolved_and_key_security_metrics(self):
+    def test_trend_frame_builds_high_risk_stock_and_resolved_high_risk_lines(self):
         rows = [
             {
-                "first_seen_at": datetime.datetime(2026, 8, 13, 10, 0),
+                "first_seen_at": datetime.datetime(2026, 8, 12, 10, 0),
                 "resolved_at": None,
                 "risk_level": "high",
                 "check_id": "llm_sensitive_content",
@@ -80,20 +80,41 @@ class DashboardMetricsTests(unittest.TestCase):
             {
                 "first_seen_at": "2026-08-13T12:00:00+08:00",
                 "resolved_at": "2026-08-14T12:00:00+08:00",
+                "risk_level": "high",
+                "check_id": "non_standard_open_port",
+                "port": 9200,
+            },
+            {
+                "first_seen_at": "2026-08-13T12:00:00+08:00",
+                "resolved_at": "2026-08-14T12:00:00+08:00",
                 "risk_level": "low",
                 "check_id": "non_standard_open_port",
                 "port": 9200,
+            },
+            {
+                "first_seen_at": "2026-08-12T12:00:00+08:00",
+                "resolved_at": None,
+                "risk_level": "high",
+                "check_id": "llm_sensitive_content",
+                "port": 443,
+                "whitelisted": True,
             },
         ]
 
         frame = metrics.trend_frame(rows)
 
         records = sorted(frame.to_dict("records"), key=lambda item: (str(item["date"]), item["metric"]))
-        self.assertIn({"date": datetime.date(2026, 8, 13), "metric": "New", "count": 2}, records)
-        self.assertIn({"date": datetime.date(2026, 8, 13), "metric": "New High", "count": 1}, records)
-        self.assertIn({"date": datetime.date(2026, 8, 13), "metric": "Sensitive Exposure 80/443", "count": 1}, records)
-        self.assertIn({"date": datetime.date(2026, 8, 13), "metric": "Non-standard Port", "count": 1}, records)
-        self.assertIn({"date": datetime.date(2026, 8, 14), "metric": "Resolved", "count": 1}, records)
+        self.assertEqual(
+            records,
+            [
+                {"date": datetime.date(2026, 8, 12), "metric": "High Risk", "count": 1},
+                {"date": datetime.date(2026, 8, 12), "metric": "Resolved High Risk", "count": 0},
+                {"date": datetime.date(2026, 8, 13), "metric": "High Risk", "count": 2},
+                {"date": datetime.date(2026, 8, 13), "metric": "Resolved High Risk", "count": 0},
+                {"date": datetime.date(2026, 8, 14), "metric": "High Risk", "count": 1},
+                {"date": datetime.date(2026, 8, 14), "metric": "Resolved High Risk", "count": 1},
+            ],
+        )
 
 
 if __name__ == "__main__":

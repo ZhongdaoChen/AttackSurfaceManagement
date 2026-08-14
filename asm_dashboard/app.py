@@ -18,6 +18,10 @@ from assess_attack_surface import load_dotenv
 
 PAGE_SIZE = 200
 TABLE_SCROLL_HEIGHT = 5200
+EXPOSURE_TREND_COLORS = {
+    "High Risk": "#d62728",
+    "Resolved High Risk": "#1f77b4",
+}
 KPI_LABELS = [
     ("Active Findings", "active_findings"),
     ("Active High", "active_high"),
@@ -108,7 +112,14 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
         if trend.empty:
             st.info("No trend data available.")
         else:
-            figure = px.line(trend, x="date", y="count", color="metric", markers=True)
+            figure = px.line(
+                trend,
+                x="date",
+                y="count",
+                color="metric",
+                markers=True,
+                color_discrete_map=EXPOSURE_TREND_COLORS,
+            )
             figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
             st.plotly_chart(figure, use_container_width=True)
     with right:

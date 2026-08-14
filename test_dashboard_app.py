@@ -72,6 +72,12 @@ class DashboardAppTests(unittest.TestCase):
         self.assertIn("Resolved This Quarter", labels)
         self.assertNotIn("Resolved Latest Scan", labels)
 
+    def test_exposure_trend_colors_are_red_and_blue(self):
+        import asm_dashboard.app as app
+
+        self.assertEqual(app.EXPOSURE_TREND_COLORS["High Risk"], "#d62728")
+        self.assertEqual(app.EXPOSURE_TREND_COLORS["Resolved High Risk"], "#1f77b4")
+
     def test_app_file_path_execution_can_import_dashboard_package(self):
         env = os.environ.copy()
         env.pop("DASHBOARD_PASSWORD", None)
