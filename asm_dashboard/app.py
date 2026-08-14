@@ -219,6 +219,93 @@ def current_status_page(connection) -> None:
     render_current_table(connection, filters)
 
 
+def historical_results_page(connection) -> None:
+    st.title("Historical Results")
+    st.caption("Scan-history view by asm_scans.started_at date. Includes whitelisted findings.")
+    selected_date = st.date_input("Scan date", value=datetime.date.today(), key="history_date")
+    options = db.fetch_filter_options(connection, current_only=False)
+    filters = filter_state(options, key_prefix="history")
+    total_probe = db.fetch_historical_findings(connection, selected_date, filters, page=1, page_size=PAGE_SIZE)
+    rows = total_probe.rows
+    high_count = sum(1 for row in rows if str(row.get("risk_level") or "").lower() == "high")
+    whitelisted_count = sum(1 for row in rows if bool(row.get("whitelisted")))
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Scans on date", len({row.get("scan_id") for row in rows if row.get("scan_id")}))
+    col2.metric("Total findings", total_probe.total)
+    col3.metric("High findings on page", high_count)
+    col4.metric("Whitelisted on page", whitelisted_count)
+    page = render_page_controls(total_probe.total, "history_page")
+    result = (
+        total_probe
+        if page == 1
+        else db.fetch_historical_findings(connection, selected_date, filters, page=page, page_size=PAGE_SIZE)
+    )
+    st.caption(f"{result.total} findings, showing page {result.page} with up to {result.page_size} rows.")
+    frame = table_frame(result.rows)
+    if frame.empty:
+        st.info("No historical findings match the filters.")
+        return
+    visible = frame.drop(columns=["_row"])
+    if "scan_id" not in visible.columns:
+        visible["scan_id"] = [row.get("scan_id") for row in result.rows]
+    if "scan_started_at" not in visible.columns:
+        visible["scan_started_at"] = [row.get("scan_started_at") for row in result.rows]
+    selection = st.dataframe(
+        visible,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+    selected_rows = selected_row_indices(selection)
+    if selected_rows:
+        st.subheader("Historical finding details")
+        st.json(frame.iloc[selected_rows[0]]["_row"], expanded=False)
+
+
+def whitelist_rules_page(connection) -> None:
+    st.title("Whitelist Rules")
+    st.caption("Dashboard-managed endpoint_name + port whitelist rules.")
+    rules = db.fetch_whitelist_rules(connection)
+    if not rules:
+        st.info("No whitelist rules have been created.")
+        return
+    frame = pd.DataFrame(rules)
+    selection = st.dataframe(
+        frame,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+    selected_rows = selected_row_indices(selection)
+    if not selected_rows:
+        return
+    selected = rules[selected_rows[0]]
+    st.subheader("Rule details")
+    st.json(selected, expanded=False)
+    if not selected.get("active"):
+        st.info("This rule is already inactive.")
+        return
+    with st.form("deactivate_rule"):
+        operator_name = st.text_input("Operator name")
+        reason = st.text_area("Deactivation reason")
+        submitted = st.form_submit_button("Deactivate rule")
+    if submitted:
+        try:
+            db.deactivate_whitelist_rule(
+                connection,
+                rule_id=int(selected["id"]),
+                operator_name=operator_name,
+                reason=reason,
+            )
+        except Exception as exc:
+            st.error(f"Deactivate failed: {type(exc).__name__}: {exc}")
+        else:
+            st.success("Whitelist rule deactivated. Existing whitelisted findings were not reverted.")
+            st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title="ASM Dashboard", layout="wide")
     if not require_login():
@@ -228,11 +315,9 @@ def main() -> None:
     if page == "Current Status":
         current_status_page(connection)
     elif page == "Historical Results":
-        st.title("Historical Results")
-        st.info("Historical Results will be implemented in the next task.")
+        historical_results_page(connection)
     else:
-        st.title("Whitelist Rules")
-        st.info("Whitelist Rules will be implemented in the next task.")
+        whitelist_rules_page(connection)
 
 
 if __name__ == "__main__":
