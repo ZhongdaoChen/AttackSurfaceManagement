@@ -39,7 +39,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["tagEmails"], ["owner@example.com", "team@example.com"])
         self.assertIn("8080", findings[0]["evidence"])
 
-    def test_non_standard_open_port_without_response_on_non_sensitive_port_is_low_risk(self):
+    def test_non_standard_open_port_without_response_is_high_risk(self):
         endpoint = {
             "id": "endpoint-1",
             "host": "app.example.com",
@@ -55,7 +55,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["check_id"], "non_standard_open_port")
-        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["risk_level"], "high")
         self.assertIn("https failed: connection refused", findings[0]["details"]["http_probe_result"])
         self.assertIn("http failed: connection refused", findings[0]["details"]["http_probe_result"])
 
