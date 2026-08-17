@@ -9,7 +9,7 @@ import pandas as pd
 def current_kpis(
     rows: list[dict[str, Any]],
     newly_identified_since: datetime.date,
-    resolved_this_quarter: int = 0,
+    cumulative_mitigated: int = 0,
 ) -> dict[str, int]:
     active_rows = [row for row in rows if not bool(row.get("whitelisted"))]
     return {
@@ -20,7 +20,7 @@ def current_kpis(
             for row in active_rows
             if (first_seen := _as_date(row.get("first_seen_at"))) is not None and first_seen >= newly_identified_since
         ),
-        "resolved_this_quarter": int(resolved_this_quarter),
+        "cumulative_mitigated": int(cumulative_mitigated),
         "sensitive_exposure_80_443": sum(
             1
             for row in active_rows
@@ -44,6 +44,18 @@ def _as_date(value: Any) -> datetime.date | None:
         return datetime.datetime.fromisoformat(text.replace("Z", "+00:00")).date()
     except ValueError:
         return None
+
+
+def cumulative_mitigated_count(rows: list[dict[str, Any]]) -> int:
+    """Cumulative mitigated count at the latest scan point.
+
+    Expects trend rows ordered chronologically, as returned by
+    db.fetch_trend_rows(). The mitigated count is cumulative per scan, so the
+    last row carries the running total.
+    """
+    if not rows:
+        return 0
+    return int(rows[-1].get("mitigated_count") or 0)
 
 
 def trend_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:

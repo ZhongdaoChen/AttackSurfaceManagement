@@ -95,7 +95,7 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertTrue(app.ROW_DETAIL_JSON_EXPANDED)
 
-    def test_kpi_labels_include_resolved_this_quarter(self):
+    def test_kpi_labels_include_cumulative_mitigated(self):
         import asm_dashboard.app as app
 
         labels = [label for label, _key in app.KPI_LABELS]
@@ -104,7 +104,8 @@ class DashboardAppTests(unittest.TestCase):
         self.assertNotIn("Active Findings", labels)
         self.assertIn("Newly Identified This Month", labels)
         self.assertNotIn("New Latest Scan", labels)
-        self.assertIn("Resolved This Quarter", labels)
+        self.assertIn("Cumulative Mitigated", labels)
+        self.assertNotIn("Resolved This Quarter", labels)
         self.assertNotIn("Resolved Latest Scan", labels)
 
     def test_active_high_kpi_style_is_red_and_bold(self):

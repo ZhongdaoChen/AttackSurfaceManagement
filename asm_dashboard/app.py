@@ -32,7 +32,7 @@ KPI_LABELS = [
     ("Active Attack Surface", "active_findings"),
     ("Active High", "active_high"),
     ("Newly Identified This Month", "newly_identified_this_month"),
-    ("Resolved This Quarter", "resolved_this_quarter"),
+    ("Cumulative Mitigated", "cumulative_mitigated"),
     ("Sensitive Exposure 80/443", "sensitive_exposure_80_443"),
     ("Current Non-standard Ports", "current_non_standard_ports"),
 ]
@@ -416,16 +416,15 @@ def current_status_page(connection) -> None:
     current_rows = db.fetch_current_kpi_rows(connection)
     now = datetime.datetime.now(datetime.UTC)
     month_start = datetime.date(now.year, now.month, 1)
-    quarter_start = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=90)
-    resolved_this_quarter = db.fetch_resolved_high_count_since(connection, quarter_start)
+    trend_rows = db.fetch_trend_rows(connection)
     kpis = metrics.current_kpis(
         current_rows,
         newly_identified_since=month_start,
-        resolved_this_quarter=resolved_this_quarter,
+        cumulative_mitigated=metrics.cumulative_mitigated_count(trend_rows),
     )
     render_kpis(kpis)
     st.markdown(CHART_SECTION_DIVIDER_HTML, unsafe_allow_html=True)
-    render_current_charts(current_rows, db.fetch_trend_rows(connection))
+    render_current_charts(current_rows, trend_rows)
     options = db.fetch_filter_options(connection, current_only=True)
     filters = filter_state(options, key_prefix="current")
     render_current_table(connection, filters)
