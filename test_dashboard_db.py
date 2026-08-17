@@ -139,7 +139,7 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("c.resolved_at <= s.started_at", sql)
         self.assertIn("w.whitelist_effective_at <= s.started_at", sql)
         self.assertIn("whitelist_effective", sql)
-        self.assertIn("LEFT JOIN asm_findings f", sql)
+        self.assertIn("JOIN asm_findings f", sql)
         self.assertIn("f.whitelisted = TRUE", sql)
         self.assertIn("dashboard_whitelist_effective", sql)
         self.assertIn("asm_whitelist_rules r", sql)
@@ -147,9 +147,13 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("ORDER BY s.started_at ASC, s.scan_id ASC", sql)
         self.assertIn("historical_whitelist_effective", sql)
         self.assertIn("resolved_whitelist_effective", sql)
-        self.assertIn("LEFT JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id", sql)
+        self.assertIn("JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id", sql)
         self.assertIn("WHERE s.started_at >= %(trend_start)s", sql)
         self.assertIn("GROUP BY s.scan_id, s.started_at", sql)
+        self.assertIn("MIN(candidate_ts)", sql)
+        self.assertIn("NOT EXISTS", sql)
+        self.assertNotIn("WHERE c.whitelisted = TRUE", sql)
+        self.assertNotIn("COALESCE(d.whitelist_effective_at, r.whitelist_effective_at, h.whitelist_effective_at)", sql)
         self.assertEqual(params, {"trend_start": db.EXPOSURE_TREND_START_DATE})
         self.assertEqual(
             rows,

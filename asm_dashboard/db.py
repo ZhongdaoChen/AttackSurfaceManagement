@@ -252,7 +252,6 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
             ORDER BY s.started_at DESC, s.scan_id DESC
             LIMIT 1
           ) rule_scan ON TRUE
-          WHERE c.whitelisted = TRUE
           GROUP BY c.finding_key
         ),
         historical_whitelist_effective AS (
@@ -260,14 +259,19 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
             c.finding_key,
             MIN(ws.started_at) AS whitelist_effective_at
           FROM asm_current_findings c
-          LEFT JOIN asm_findings f
+          JOIN asm_findings f
             ON COALESCE(f.endpoint_id, '') = COALESCE(c.endpoint_id, '')
            AND COALESCE(f.check_id, '') = COALESCE(c.check_id, '')
            AND COALESCE(f.host, '') = COALESCE(c.host, '')
            AND COALESCE(f.port, -1) = COALESCE(c.port, -1)
            AND f.whitelisted = TRUE
-          LEFT JOIN asm_scans ws ON ws.scan_id = f.scan_id
-          WHERE c.whitelisted = TRUE
+          JOIN asm_scans ws ON ws.scan_id = f.scan_id
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM asm_whitelist_rules r
+            WHERE r.endpoint_name = c.endpoint_name
+              AND COALESCE(r.port, -1) = COALESCE(c.port, -1)
+          )
           GROUP BY c.finding_key
         ),
         resolved_whitelist_effective AS (
@@ -275,21 +279,26 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
             c.finding_key,
             rs.started_at AS whitelist_effective_at
           FROM asm_current_findings c
-          LEFT JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id
-          WHERE c.whitelisted = TRUE
+          JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id
         ),
         whitelist_effective AS (
           SELECT
             c.finding_key,
-            COALESCE(
-              d.whitelist_effective_at,
-              r.whitelist_effective_at,
-              h.whitelist_effective_at
-            ) AS whitelist_effective_at
+            effective.whitelist_effective_at
           FROM asm_current_findings c
           LEFT JOIN dashboard_whitelist_effective d ON d.finding_key = c.finding_key
           LEFT JOIN resolved_whitelist_effective r ON r.finding_key = c.finding_key
           LEFT JOIN historical_whitelist_effective h ON h.finding_key = c.finding_key
+          LEFT JOIN LATERAL (
+            SELECT MIN(candidate_ts) AS whitelist_effective_at
+            FROM (
+              VALUES
+                (d.whitelist_effective_at),
+                (r.whitelist_effective_at),
+                (h.whitelist_effective_at)
+            ) AS candidates(candidate_ts)
+            WHERE candidate_ts IS NOT NULL
+          ) effective ON TRUE
         )
         SELECT
           s.scan_id,
