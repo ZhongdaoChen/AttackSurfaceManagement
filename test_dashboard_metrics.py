@@ -53,15 +53,25 @@ class DashboardMetricsTests(unittest.TestCase):
         result = metrics.current_kpis(
             rows,
             newly_identified_since=datetime.date(2026, 8, 1),
-            resolved_this_quarter=4,
+            cumulative_mitigated=4,
         )
 
         self.assertEqual(result["active_findings"], 4)
         self.assertEqual(result["active_high"], 2)
         self.assertEqual(result["newly_identified_this_month"], 2)
-        self.assertEqual(result["resolved_this_quarter"], 4)
+        self.assertEqual(result["cumulative_mitigated"], 4)
         self.assertEqual(result["sensitive_exposure_80_443"], 1)
         self.assertEqual(result["current_non_standard_ports"], 1)
+
+    def test_cumulative_mitigated_count_uses_latest_trend_row(self):
+        rows = [
+            {"scan_id": "scan-1", "scan_started_at": "2026-08-13T10:00:00+00:00", "mitigated_count": 2},
+            {"scan_id": "scan-2", "scan_started_at": "2026-08-14T10:00:00+00:00", "mitigated_count": 5},
+        ]
+
+        self.assertEqual(metrics.cumulative_mitigated_count(rows), 5)
+        self.assertEqual(metrics.cumulative_mitigated_count([]), 0)
+        self.assertEqual(metrics.cumulative_mitigated_count([{"scan_id": "scan-1"}]), 0)
 
     def test_endpoint_link_returns_markdown_link_only_for_http_urls(self):
         self.assertEqual(

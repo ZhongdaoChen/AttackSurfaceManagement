@@ -98,20 +98,6 @@ class DashboardDbTests(unittest.TestCase):
         self.assertEqual(data_params["start_date"], datetime.date(2026, 8, 14))
         self.assertEqual(result.rows, [{"id": 1, "whitelisted": True}])
 
-    def test_fetch_resolved_high_count_since_counts_high_risk_resolved_after_since(self):
-        connection = FakeConnection(count=3)
-        since = datetime.datetime(2026, 5, 14, 12, 0, tzinfo=datetime.UTC)
-
-        count = db.fetch_resolved_high_count_since(connection, since)
-
-        sql, params = connection.cursor_obj.executions[0]
-        self.assertIn("FROM asm_current_findings", sql)
-        self.assertIn("risk_level = 'high'", sql)
-        self.assertNotIn("whitelisted = FALSE", sql)
-        self.assertIn("resolved_at >= %(since)s", sql)
-        self.assertEqual(params["since"], since)
-        self.assertEqual(count, 3)
-
     def test_fetch_trend_rows_returns_active_high_and_cumulative_mitigated_by_scan(self):
         connection = FakeConnection(
             rows=[

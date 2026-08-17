@@ -219,20 +219,6 @@ def fetch_current_kpi_rows(connection) -> list[dict[str, Any]]:
     return _fetch_all(cursor)
 
 
-def fetch_resolved_high_count_since(connection, since: datetime.datetime) -> int:
-    cursor = connection.cursor()
-    cursor.execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM asm_current_findings
-        WHERE risk_level = 'high'
-          AND resolved_at >= %(since)s
-        """,
-        {"since": since},
-    )
-    return _fetch_count(cursor)
-
-
 def fetch_trend_rows(connection) -> list[dict[str, Any]]:
     # The two trend metrics are aggregated independently per scan and only
     # joined afterwards. Putting both fan-out joins (per-scan asm_findings and
