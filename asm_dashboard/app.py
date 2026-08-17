@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import html
 import os
+import re
 import sys
 from typing import Any
 
@@ -71,23 +72,47 @@ def sidebar_page() -> str:
     return st.sidebar.radio("Navigation", ["Current Status", "Historical Results", "Whitelist Rules"])
 
 
+def capitalize_option_label(value: Any) -> str:
+    text = str(value)
+    return re.sub(r"(^|[\s_\-])(\w)", lambda match: match.group(1) + match.group(2).upper(), text)
+
+
 def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> db.FilterState:
     with st.expander("Filters", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
-            risk_levels = st.multiselect("Risk Level", options.get("risk_levels", []), key=f"{key_prefix}_risk")
+            risk_levels = st.multiselect(
+                "Risk Level",
+                options.get("risk_levels", []),
+                key=f"{key_prefix}_risk",
+                format_func=capitalize_option_label,
+            )
             ports = st.multiselect("Port", options.get("ports", []), key=f"{key_prefix}_port")
         with col2:
             cloud_platforms = st.multiselect(
-                "Cloud Platform", options.get("cloud_platforms", []), key=f"{key_prefix}_platform"
+                "Cloud Platform",
+                options.get("cloud_platforms", []),
+                key=f"{key_prefix}_platform",
+                format_func=capitalize_option_label,
             )
             cloud_accounts = st.multiselect(
-                "Cloud Account Name", options.get("cloud_accounts", []), key=f"{key_prefix}_account"
+                "Cloud Account Name",
+                options.get("cloud_accounts", []),
+                key=f"{key_prefix}_account",
+                format_func=capitalize_option_label,
             )
         with col3:
-            check_ids = st.multiselect("Check ID", options.get("check_ids", []), key=f"{key_prefix}_check")
+            check_ids = st.multiselect(
+                "Check ID",
+                options.get("check_ids", []),
+                key=f"{key_prefix}_check",
+                format_func=capitalize_option_label,
+            )
             exposure_levels = st.multiselect(
-                "Exposure Level", options.get("exposure_levels", []), key=f"{key_prefix}_exposure"
+                "Exposure Level",
+                options.get("exposure_levels", []),
+                key=f"{key_prefix}_exposure",
+                format_func=capitalize_option_label,
             )
         search = st.text_input("Endpoint or host search", key=f"{key_prefix}_search")
         date_range = st.date_input("First Seen date range", value=(), key=f"{key_prefix}_first_seen")
