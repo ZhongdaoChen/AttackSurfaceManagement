@@ -127,6 +127,7 @@ class DashboardDbTests(unittest.TestCase):
         rows = db.fetch_trend_rows(connection)
 
         sql, params = connection.cursor_obj.executions[0]
+        normalized_sql = " ".join(sql.split())
         self.assertIn("FROM asm_scans s", sql)
         self.assertIn("active_high_count", sql)
         self.assertIn("mitigated_count", sql)
@@ -157,8 +158,10 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("ORDER BY s.started_at ASC, s.scan_id ASC", sql)
         self.assertIn("historical_whitelist_effective", sql)
         self.assertIn("LEFT JOIN dashboard_rule_effective d ON d.finding_key = c.finding_key", sql)
-        self.assertIn("d.whitelist_effective_at IS NULL", sql)
-        self.assertIn("ws.started_at >= d.whitelist_effective_at", sql)
+        self.assertIn(
+            "(d.whitelist_effective_at IS NULL OR (c.whitelisted = TRUE AND ws.started_at >= d.whitelist_effective_at))",
+            normalized_sql,
+        )
         self.assertIn("resolved_whitelist_effective", sql)
         self.assertIn("JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id", sql)
         self.assertIn("WHERE s.started_at >= %(trend_start)s", sql)

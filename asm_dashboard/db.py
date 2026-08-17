@@ -276,8 +276,8 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
            AND f.whitelisted = TRUE
           JOIN asm_scans ws ON ws.scan_id = f.scan_id
           LEFT JOIN dashboard_rule_effective d ON d.finding_key = c.finding_key
-          WHERE d.whitelist_effective_at IS NULL
-             OR ws.started_at >= d.whitelist_effective_at
+          WHERE (d.whitelist_effective_at IS NULL
+             OR (c.whitelisted = TRUE AND ws.started_at >= d.whitelist_effective_at))
           GROUP BY c.finding_key
         ),
         resolved_whitelist_effective AS (
