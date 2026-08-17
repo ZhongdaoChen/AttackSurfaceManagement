@@ -237,19 +237,83 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
     cursor = connection.cursor()
     cursor.execute(
         """
+        WITH dashboard_whitelist_effective AS (
+          SELECT
+            c.finding_key,
+            MIN(rule_scan.started_at) AS whitelist_effective_at
+          FROM asm_current_findings c
+          JOIN asm_whitelist_rules r
+            ON r.endpoint_name = c.endpoint_name
+           AND COALESCE(r.port, -1) = COALESCE(c.port, -1)
+          JOIN LATERAL (
+            SELECT s.started_at
+            FROM asm_scans s
+            WHERE s.started_at <= r.created_at
+            ORDER BY s.started_at DESC, s.scan_id DESC
+            LIMIT 1
+          ) rule_scan ON TRUE
+          WHERE c.whitelisted = TRUE
+          GROUP BY c.finding_key
+        ),
+        historical_whitelist_effective AS (
+          SELECT
+            c.finding_key,
+            MIN(ws.started_at) AS whitelist_effective_at
+          FROM asm_current_findings c
+          LEFT JOIN asm_findings f
+            ON COALESCE(f.endpoint_id, '') = COALESCE(c.endpoint_id, '')
+           AND COALESCE(f.check_id, '') = COALESCE(c.check_id, '')
+           AND COALESCE(f.host, '') = COALESCE(c.host, '')
+           AND COALESCE(f.port, -1) = COALESCE(c.port, -1)
+           AND f.whitelisted = TRUE
+          LEFT JOIN asm_scans ws ON ws.scan_id = f.scan_id
+          WHERE c.whitelisted = TRUE
+          GROUP BY c.finding_key
+        ),
+        resolved_whitelist_effective AS (
+          SELECT
+            c.finding_key,
+            rs.started_at AS whitelist_effective_at
+          FROM asm_current_findings c
+          LEFT JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id
+          WHERE c.whitelisted = TRUE
+        ),
+        whitelist_effective AS (
+          SELECT
+            c.finding_key,
+            COALESCE(
+              d.whitelist_effective_at,
+              r.whitelist_effective_at,
+              h.whitelist_effective_at
+            ) AS whitelist_effective_at
+          FROM asm_current_findings c
+          LEFT JOIN dashboard_whitelist_effective d ON d.finding_key = c.finding_key
+          LEFT JOIN resolved_whitelist_effective r ON r.finding_key = c.finding_key
+          LEFT JOIN historical_whitelist_effective h ON h.finding_key = c.finding_key
+        )
         SELECT
           s.scan_id,
           s.started_at AS scan_started_at,
-          COUNT(DISTINCT f.id) AS high_risk_count,
-          COUNT(DISTINCT c.finding_key) AS mitigated_count
+          COUNT(DISTINCT c.finding_key) FILTER (
+            WHERE c.risk_level = 'high'
+              AND c.first_seen_at <= s.started_at
+              AND c.last_seen_at >= s.started_at
+              AND (c.resolved_at IS NULL OR c.resolved_at > s.started_at)
+              AND (w.whitelist_effective_at IS NULL OR w.whitelist_effective_at > s.started_at)
+          ) AS active_high_count,
+          COUNT(DISTINCT c.finding_key) FILTER (
+            WHERE c.risk_level = 'high'
+              AND (
+                c.resolved_at <= s.started_at
+                OR w.whitelist_effective_at <= s.started_at
+              )
+          ) AS mitigated_count
         FROM asm_scans s
-        LEFT JOIN asm_findings f ON f.scan_id = s.scan_id
-          AND f.risk_level = 'high'
-        LEFT JOIN asm_current_findings c ON c.resolved_scan_id = s.scan_id
-          AND c.risk_level = 'high'
+        LEFT JOIN asm_current_findings c ON c.first_seen_at <= s.started_at
+        LEFT JOIN whitelist_effective w ON w.finding_key = c.finding_key
         WHERE s.started_at >= %(trend_start)s
         GROUP BY s.scan_id, s.started_at
-        ORDER BY s.started_at ASC, s.scan_id ASC
+        ORDER BY s.started_at DESC, s.scan_id DESC
         """,
         {"trend_start": EXPOSURE_TREND_START_DATE},
     )
