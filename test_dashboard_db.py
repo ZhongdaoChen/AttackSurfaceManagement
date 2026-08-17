@@ -144,7 +144,7 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("dashboard_whitelist_effective", sql)
         self.assertIn("asm_whitelist_rules r", sql)
         self.assertIn("s.started_at <= r.created_at", sql)
-        self.assertIn("ORDER BY s.started_at DESC, s.scan_id DESC", sql)
+        self.assertIn("ORDER BY s.started_at ASC, s.scan_id ASC", sql)
         self.assertIn("historical_whitelist_effective", sql)
         self.assertIn("resolved_whitelist_effective", sql)
         self.assertIn("LEFT JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id", sql)

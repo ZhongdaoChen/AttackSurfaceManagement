@@ -313,7 +313,7 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
         LEFT JOIN whitelist_effective w ON w.finding_key = c.finding_key
         WHERE s.started_at >= %(trend_start)s
         GROUP BY s.scan_id, s.started_at
-        ORDER BY s.started_at DESC, s.scan_id DESC
+        ORDER BY s.started_at ASC, s.scan_id ASC
         """,
         {"trend_start": EXPOSURE_TREND_START_DATE},
     )
