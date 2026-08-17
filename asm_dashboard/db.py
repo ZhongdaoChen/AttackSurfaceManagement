@@ -237,7 +237,7 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
     cursor = connection.cursor()
     cursor.execute(
         """
-        WITH dashboard_whitelist_effective AS (
+        WITH dashboard_rule_effective AS (
           SELECT
             c.finding_key,
             MIN(rule_scan.started_at) AS whitelist_effective_at
@@ -254,6 +254,15 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           ) rule_scan ON TRUE
           GROUP BY c.finding_key
         ),
+        dashboard_whitelist_effective AS (
+          SELECT
+            c.finding_key,
+            d.whitelist_effective_at
+          FROM dashboard_rule_effective d
+          JOIN asm_current_findings c
+            ON c.finding_key = d.finding_key
+           AND c.whitelisted = TRUE
+        ),
         historical_whitelist_effective AS (
           SELECT
             c.finding_key,
@@ -266,7 +275,7 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
            AND COALESCE(f.port, -1) = COALESCE(c.port, -1)
            AND f.whitelisted = TRUE
           JOIN asm_scans ws ON ws.scan_id = f.scan_id
-          LEFT JOIN dashboard_whitelist_effective d ON d.finding_key = c.finding_key
+          LEFT JOIN dashboard_rule_effective d ON d.finding_key = c.finding_key
           WHERE d.whitelist_effective_at IS NULL
              OR ws.started_at >= d.whitelist_effective_at
           GROUP BY c.finding_key
@@ -325,7 +334,7 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
          AND COALESCE(active_c.check_id, '') = COALESCE(active_f.check_id, '')
          AND COALESCE(active_c.host, '') = COALESCE(active_f.host, '')
          AND COALESCE(active_c.port, -1) = COALESCE(active_f.port, -1)
-        LEFT JOIN dashboard_whitelist_effective active_d ON active_d.finding_key = active_c.finding_key
+        LEFT JOIN dashboard_rule_effective active_d ON active_d.finding_key = active_c.finding_key
         LEFT JOIN asm_current_findings c ON c.first_seen_at <= s.started_at
         LEFT JOIN whitelist_effective w ON w.finding_key = c.finding_key
         WHERE s.started_at >= %(trend_start)s
