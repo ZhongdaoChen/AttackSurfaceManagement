@@ -300,9 +300,16 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
         SELECT
           s.scan_id,
           s.started_at AS scan_started_at,
-          COUNT(DISTINCT active_f.finding_key) FILTER (
+          COUNT(DISTINCT active_f.id) FILTER (
             WHERE active_f.risk_level = 'high'
-              AND active_f.whitelisted = FALSE
+              AND (
+                active_f.whitelisted = FALSE
+                OR (
+                  active_f.whitelisted = TRUE
+                  AND active_d.whitelist_effective_at IS NOT NULL
+                  AND active_d.whitelist_effective_at > s.started_at
+                )
+              )
           ) AS active_high_count,
           COUNT(DISTINCT c.finding_key) FILTER (
             WHERE c.risk_level = 'high'
@@ -313,6 +320,12 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           ) AS mitigated_count
         FROM asm_scans s
         LEFT JOIN asm_findings active_f ON active_f.scan_id = s.scan_id
+        LEFT JOIN asm_current_findings active_c
+          ON COALESCE(active_c.endpoint_id, '') = COALESCE(active_f.endpoint_id, '')
+         AND COALESCE(active_c.check_id, '') = COALESCE(active_f.check_id, '')
+         AND COALESCE(active_c.host, '') = COALESCE(active_f.host, '')
+         AND COALESCE(active_c.port, -1) = COALESCE(active_f.port, -1)
+        LEFT JOIN dashboard_whitelist_effective active_d ON active_d.finding_key = active_c.finding_key
         LEFT JOIN asm_current_findings c ON c.first_seen_at <= s.started_at
         LEFT JOIN whitelist_effective w ON w.finding_key = c.finding_key
         WHERE s.started_at >= %(trend_start)s
