@@ -92,18 +92,18 @@ class DashboardMetricsTests(unittest.TestCase):
 
         self.assertEqual(frame.to_dict("records"), [{"risk_level": "high", "count": 2}, {"risk_level": "low", "count": 1}])
 
-    def test_trend_frame_uses_scan_dates_and_high_risk_counts(self):
+    def test_trend_frame_maps_active_high_and_cumulative_mitigated_counts(self):
         rows = [
             {
                 "scan_id": "scan-1",
                 "scan_started_at": datetime.datetime(2026, 8, 12, 10, 0),
-                "high_risk_count": 2,
+                "active_high_count": 2,
                 "mitigated_count": 1,
             },
             {
                 "scan_id": "scan-2",
                 "scan_started_at": "2026-08-13T12:00:00+08:00",
-                "high_risk_count": 5,
+                "active_high_count": 5,
                 "mitigated_count": 3,
             },
         ]
@@ -113,9 +113,9 @@ class DashboardMetricsTests(unittest.TestCase):
         self.assertEqual(
             frame.to_dict("records"),
             [
-                {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "High Risk", "count": 1},
+                {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "High Risk", "count": 2},
                 {"date": datetime.date(2026, 8, 12), "scan_id": "scan-1", "metric": "Mitigated", "count": 1},
-                {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "High Risk", "count": 2},
+                {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "High Risk", "count": 5},
                 {"date": datetime.date(2026, 8, 13), "scan_id": "scan-2", "metric": "Mitigated", "count": 3},
             ],
         )
