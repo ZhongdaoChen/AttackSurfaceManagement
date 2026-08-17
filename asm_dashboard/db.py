@@ -266,12 +266,9 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
            AND COALESCE(f.port, -1) = COALESCE(c.port, -1)
            AND f.whitelisted = TRUE
           JOIN asm_scans ws ON ws.scan_id = f.scan_id
-          WHERE NOT EXISTS (
-            SELECT 1
-            FROM asm_whitelist_rules r
-            WHERE r.endpoint_name = c.endpoint_name
-              AND COALESCE(r.port, -1) = COALESCE(c.port, -1)
-          )
+          LEFT JOIN dashboard_whitelist_effective d ON d.finding_key = c.finding_key
+          WHERE d.whitelist_effective_at IS NULL
+             OR ws.started_at >= d.whitelist_effective_at
           GROUP BY c.finding_key
         ),
         resolved_whitelist_effective AS (
@@ -303,12 +300,9 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
         SELECT
           s.scan_id,
           s.started_at AS scan_started_at,
-          COUNT(DISTINCT c.finding_key) FILTER (
-            WHERE c.risk_level = 'high'
-              AND c.first_seen_at <= s.started_at
-              AND c.last_seen_at >= s.started_at
-              AND (c.resolved_at IS NULL OR c.resolved_at > s.started_at)
-              AND (w.whitelist_effective_at IS NULL OR w.whitelist_effective_at > s.started_at)
+          COUNT(DISTINCT active_f.finding_key) FILTER (
+            WHERE active_f.risk_level = 'high'
+              AND active_f.whitelisted = FALSE
           ) AS active_high_count,
           COUNT(DISTINCT c.finding_key) FILTER (
             WHERE c.risk_level = 'high'
@@ -318,6 +312,7 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
               )
           ) AS mitigated_count
         FROM asm_scans s
+        LEFT JOIN asm_findings active_f ON active_f.scan_id = s.scan_id
         LEFT JOIN asm_current_findings c ON c.first_seen_at <= s.started_at
         LEFT JOIN whitelist_effective w ON w.finding_key = c.finding_key
         WHERE s.started_at >= %(trend_start)s
