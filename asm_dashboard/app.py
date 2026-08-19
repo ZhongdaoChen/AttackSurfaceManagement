@@ -39,6 +39,71 @@ KPI_LABELS = [
 KPI_STYLES = {
     "active_high": {"color": "#d62728", "font_weight": "700"},
 }
+KPI_ACCENTS = {
+    "active_findings": "#2563eb",
+    "active_high": "#d62728",
+    "newly_identified_this_month": "#d97706",
+    "cumulative_mitigated": "#16a34a",
+    "sensitive_exposure_80_443": "#ea580c",
+    "current_non_standard_ports": "#7c3aed",
+}
+DEFAULT_KPI_ACCENT = "#2563eb"
+RISK_LEVEL_COLORS = {
+    "high": "#d62728",
+    "medium": "#f59e0b",
+    "low": "#16a34a",
+    "unknown": "#94a3b8",
+}
+DEFAULT_RISK_COLOR = "#cbd5e1"
+BAR_CHART_ACCENTS = {
+    "cloud_account_name": "#2563eb",
+    "cloud_platform": "#0ea5e9",
+    "check_id": "#6366f1",
+}
+DEFAULT_BAR_ACCENT = "#6366f1"
+CHART_GRID_COLOR = "#eef2f7"
+CHART_TEXT_COLOR = "#64748b"
+KPI_PAGE_CSS = """
+<style>
+.asm-kpi-card {
+    position: relative;
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 20px 16px 24px;
+    overflow: hidden;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.asm-kpi-card:hover {
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.09);
+    transform: translateY(-2px);
+}
+.asm-kpi-card--alert {
+    background-color: #fef2f2;
+    border-color: #fecaca;
+}
+.asm-kpi-accent {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+}
+.asm-kpi-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 8px;
+}
+.asm-kpi-value {
+    font-size: 2.1rem;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+</style>
+"""
 
 
 def require_login() -> bool:
@@ -131,23 +196,61 @@ def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> 
     )
 
 
+def kpi_card_html(label: str, value: int, key: str) -> str:
+    style = KPI_STYLES.get(key) or {}
+    accent = KPI_ACCENTS.get(key, DEFAULT_KPI_ACCENT)
+    value_color = style.get("color", "#0f172a")
+    value_weight = style.get("font_weight", "700")
+    card_class = "asm-kpi-card asm-kpi-card--alert" if key == "active_high" else "asm-kpi-card"
+    escaped_label = html.escape(label)
+    return (
+        f'<div class="{card_class}" data-testid="metric-container">'
+        f'<div class="asm-kpi-accent" style="background-color: {accent};"></div>'
+        f'<div class="asm-kpi-label">{escaped_label}</div>'
+        f'<div class="asm-kpi-value" style="color: {value_color}; font-weight: {value_weight};">{value}</div>'
+        "</div>"
+    )
+
+
 def render_kpis(kpis: dict[str, int]) -> None:
     cols = st.columns(3)
     for index, (label, key) in enumerate(KPI_LABELS):
         value = kpis.get(key, 0)
-        style = KPI_STYLES.get(key)
-        if style:
-            cols[index % 3].markdown(
-                f"""
-                <div data-testid="metric-container">
-                    <label>{label}</label>
-                    <div style="color: {style['color']}; font-weight: {style['font_weight']}; font-size: 2rem;">{value}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            cols[index % 3].metric(label, value)
+        cols[index % 3].markdown(kpi_card_html(label, value, key), unsafe_allow_html=True)
+
+
+def apply_dashboard_chart_style(figure: go.Figure, height: int | None = None) -> None:
+    figure.update_layout(
+        height=height,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#ffffff",
+        font={"color": "#334155", "size": 12},
+        margin={"l": 48, "r": 16, "t": 32, "b": 16},
+        hoverlabel={
+            "bgcolor": "#ffffff",
+            "bordercolor": "#cbd5e1",
+            "font": {"color": "#0f172a", "size": 12},
+        },
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1,
+            "bgcolor": "rgba(0,0,0,0)",
+            "font": {"color": "#475569", "size": 12},
+        },
+    )
+    figure.update_xaxes(
+        showgrid=False,
+        tickfont={"color": CHART_TEXT_COLOR, "size": 11},
+        linecolor="#e2e8f0",
+    )
+    figure.update_yaxes(
+        gridcolor=CHART_GRID_COLOR,
+        zeroline=False,
+        tickfont={"color": CHART_TEXT_COLOR, "size": 11},
+    )
 
 
 def exposure_trend_figure(trend: pd.DataFrame):
@@ -162,15 +265,59 @@ def exposure_trend_figure(trend: pd.DataFrame):
                 y=subset["count"],
                 mode="lines+markers",
                 name=metric,
-                marker={"color": EXPOSURE_TREND_COLORS[metric]},
-                line={"color": EXPOSURE_TREND_COLORS[metric]},
+                marker={
+                    "color": EXPOSURE_TREND_COLORS[metric],
+                    "size": 7,
+                    "line": {"color": "#ffffff", "width": 1.5},
+                },
+                line={"color": EXPOSURE_TREND_COLORS[metric], "width": 2.5},
                 yaxis="y",
                 customdata=subset[["scan_id"]],
                 hovertemplate="%{x}<br>%{fullData.name}: %{y}<br>scan_id: %{customdata[0]}<extra></extra>",
             )
         )
     figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
-    figure.update_yaxes(title_text="Count")
+    figure.update_yaxes(title_text="Count", rangemode="nonnegative")
+    apply_dashboard_chart_style(figure, height=380)
+    figure.update_layout(hovermode="x unified")
+    return figure
+
+
+def risk_distribution_figure(risk: pd.DataFrame) -> go.Figure:
+    colors = [
+        RISK_LEVEL_COLORS.get(str(level).strip().lower(), DEFAULT_RISK_COLOR) for level in risk["risk_level"]
+    ]
+    figure = px.pie(risk, names="risk_level", values="count")
+    figure.update_traces(
+        hole=0.55,
+        sort=False,
+        direction="clockwise",
+        textinfo="percent",
+        textfont={"color": "#0f172a", "size": 12},
+        marker={"colors": colors, "line": {"color": "#ffffff", "width": 2}},
+        hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
+    )
+    apply_dashboard_chart_style(figure, height=380)
+    figure.update_layout(margin={"l": 16, "r": 16, "t": 40, "b": 16})
+    return figure
+
+
+def distribution_bar_figure(frame: pd.DataFrame, key: str) -> go.Figure:
+    figure = px.bar(frame, x=key, y="count")
+    accent = BAR_CHART_ACCENTS.get(key, DEFAULT_BAR_ACCENT)
+    figure.update_traces(
+        marker_color=accent,
+        marker={"line": {"width": 0}},
+        text=frame["count"],
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="%{x}: %{y}<extra></extra>",
+    )
+    figure.update_xaxes(title=None)
+    figure.update_yaxes(title=None)
+    if key == "check_id":
+        figure.update_xaxes(tickangle=-35, tickfont={"color": CHART_TEXT_COLOR, "size": 10})
+    apply_dashboard_chart_style(figure, height=320)
     return figure
 
 
@@ -178,18 +325,20 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
     trend = metrics.trend_frame(trend_rows)
     left, right = st.columns([2, 1])
     with left:
-        st.subheader(EXPOSURE_TREND_TITLE)
-        if trend.empty:
-            st.info("No trend data available.")
-        else:
-            st.plotly_chart(exposure_trend_figure(trend), use_container_width=True)
+        with st.container(border=True):
+            st.subheader(EXPOSURE_TREND_TITLE)
+            if trend.empty:
+                st.info("No trend data available.")
+            else:
+                st.plotly_chart(exposure_trend_figure(trend), use_container_width=True)
     with right:
-        st.subheader("Risk distribution")
-        risk = metrics.distribution(current_rows, "risk_level")
-        if risk.empty:
-            st.info("No risk distribution data.")
-        else:
-            st.plotly_chart(px.pie(risk, names="risk_level", values="count"), use_container_width=True)
+        with st.container(border=True):
+            st.subheader("Risk distribution")
+            risk = metrics.distribution(current_rows, "risk_level")
+            if risk.empty:
+                st.info("No risk distribution data.")
+            else:
+                st.plotly_chart(risk_distribution_figure(risk), use_container_width=True)
     col1, col2, col3 = st.columns(3)
     for column, title, key in [
         (col1, "Cloud Accounts", "cloud_account_name"),
@@ -197,12 +346,13 @@ def render_current_charts(current_rows: list[dict[str, Any]], trend_rows: list[d
         (col3, "Top Check IDs", "check_id"),
     ]:
         with column:
-            st.subheader(title)
-            frame = metrics.distribution(current_rows, key)
-            if frame.empty:
-                st.info("No data.")
-            else:
-                st.plotly_chart(px.bar(frame, x=key, y="count"), use_container_width=True)
+            with st.container(border=True):
+                st.subheader(title)
+                frame = metrics.distribution(current_rows, key)
+                if frame.empty:
+                    st.info("No data.")
+                else:
+                    st.plotly_chart(distribution_bar_figure(frame, key), use_container_width=True)
 
 
 def table_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -413,6 +563,7 @@ def render_current_table(connection, filters: db.FilterState) -> None:
 def current_status_page(connection) -> None:
     st.title("ASM Current Status")
     st.caption("Executive view of active, non-whitelisted attack surface findings.")
+    st.markdown(KPI_PAGE_CSS, unsafe_allow_html=True)
     current_rows = db.fetch_current_kpi_rows(connection)
     now = datetime.datetime.now(datetime.UTC)
     month_start = datetime.date(now.year, now.month, 1)
