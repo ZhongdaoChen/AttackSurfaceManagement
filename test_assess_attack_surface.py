@@ -174,7 +174,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["subscription"], "Cicdtools-prod")
 
-    def test_non_standard_open_port_for_odp_china_account_is_low_risk(self):
+    def test_non_standard_open_port_for_odp_china_account_is_high_risk(self):
         endpoint = {
             "id": "endpoint-1",
             "host": "app.example.com",
@@ -190,8 +190,46 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
 
         self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["risk_level"], "high")
         self.assertEqual(findings[0]["details"]["subscription"], "ODP-China-account")
+
+    def test_non_standard_open_port_for_mobileprintjob_production_is_low_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 22,
+            "protocols": ["SSH"],
+            "portStatus": "OPEN",
+            "cloudAccount": {"name": "MobilePrintJob Production"},
+        }
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "MobilePrintJob Production")
+
+    def test_non_standard_open_port_for_mobileprintjob_account_id_is_low_risk(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 9095,
+            "protocols": ["OTHER"],
+            "portStatus": "OPEN",
+            "accountId": "251239237414",
+        }
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["subscription"], "251239237414")
 
     def test_non_standard_open_port_https_sensitive_content_is_high_risk(self):
         endpoint = {

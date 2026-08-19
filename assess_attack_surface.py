@@ -44,7 +44,8 @@ LOW_RISK_SUBSCRIPTIONS = {
     "adidas-linked-bam-int-cn",
     "347221608445",
     "cicdtools-prod",
-    "odp-china-account",
+    "mobileprintjob production",
+    "251239237414",
 }
 SUBSCRIPTION_FIELDS = (
     "subscription",
