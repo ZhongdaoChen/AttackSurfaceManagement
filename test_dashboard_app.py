@@ -103,14 +103,15 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertIn("st.columns(len(KPI_LABELS)", body)
 
-    def test_current_status_shows_kpis_and_filters_before_charts(self):
+    def test_current_status_shows_filters_between_charts_and_table(self):
         source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
         start = source.index("def current_status_page")
         end = source.index("\n\ndef ", start)
         body = source[start:end]
 
-        self.assertLess(body.index("render_kpis("), body.index("filter_state("))
-        self.assertLess(body.index("filter_state("), body.index("render_current_charts("))
+        self.assertLess(body.index("render_kpis("), body.index("render_current_charts("))
+        self.assertLess(body.index("render_current_charts("), body.index("filter_state("))
+        self.assertLess(body.index("filter_state("), body.index("render_current_table("))
 
     def test_kpi_labels_include_cumulative_mitigated(self):
         import asm_dashboard.app as app
