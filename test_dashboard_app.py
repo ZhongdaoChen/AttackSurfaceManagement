@@ -84,16 +84,33 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.expand_icon(expanded=False), "▶")
         self.assertEqual(app.expand_icon(expanded=True), "▼")
 
-    def test_table_scroll_height_targets_about_one_hundred_rows(self):
+    def test_table_scroll_height_keeps_page_within_one_viewport(self):
         import asm_dashboard.app as app
 
-        self.assertGreaterEqual(app.TABLE_SCROLL_HEIGHT, 4800)
-        self.assertLessEqual(app.TABLE_SCROLL_HEIGHT, 5600)
+        self.assertGreaterEqual(app.TABLE_SCROLL_HEIGHT, 480)
+        self.assertLessEqual(app.TABLE_SCROLL_HEIGHT, 800)
 
     def test_row_detail_json_expands_by_default(self):
         import asm_dashboard.app as app
 
         self.assertTrue(app.ROW_DETAIL_JSON_EXPANDED)
+
+    def test_kpis_render_in_a_single_row(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def render_kpis")
+        end = source.index("\n\ndef ", start)
+        body = source[start:end]
+
+        self.assertIn("st.columns(len(KPI_LABELS)", body)
+
+    def test_current_status_shows_kpis_and_filters_before_charts(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def current_status_page")
+        end = source.index("\n\ndef ", start)
+        body = source[start:end]
+
+        self.assertLess(body.index("render_kpis("), body.index("filter_state("))
+        self.assertLess(body.index("filter_state("), body.index("render_current_charts("))
 
     def test_kpi_labels_include_cumulative_mitigated(self):
         import asm_dashboard.app as app
@@ -141,7 +158,7 @@ class DashboardAppTests(unittest.TestCase):
         import asm_dashboard.app as app
 
         self.assertIn("border-top", app.CHART_SECTION_DIVIDER_HTML)
-        self.assertIn("margin: 2rem 0 1.5rem 0", app.CHART_SECTION_DIVIDER_HTML)
+        self.assertIn("margin: 1.25rem 0 1rem 0", app.CHART_SECTION_DIVIDER_HTML)
         self.assertIn("width: 100%", app.CHART_SECTION_DIVIDER_HTML)
 
     def test_evidence_cell_html_clamps_to_two_lines(self):

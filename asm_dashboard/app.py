@@ -20,14 +20,14 @@ from assess_attack_surface import load_dotenv
 
 
 PAGE_SIZE = 200
-TABLE_SCROLL_HEIGHT = 5200
+TABLE_SCROLL_HEIGHT = 620
 ROW_DETAIL_JSON_EXPANDED = True
 EXPOSURE_TREND_COLORS = {
     "High Risk": "#d62728",
     "Mitigated": "#1f77b4",
 }
 EXPOSURE_TREND_TITLE = "Exposure Trend"
-CHART_SECTION_DIVIDER_HTML = '<div style="width: 100%; border-top: 1px solid #e5e7eb; border-top-color: light-dark(#e5e7eb, #3d4351); margin: 2rem 0 1.5rem 0;"></div>'
+CHART_SECTION_DIVIDER_HTML = '<div style="width: 100%; border-top: 1px solid #e5e7eb; border-top-color: light-dark(#e5e7eb, #3d4351); margin: 1.25rem 0 1rem 0;"></div>'
 KPI_LABELS = [
     ("Active Attack Surface", "active_findings"),
     ("Active High", "active_high"),
@@ -61,16 +61,33 @@ BAR_CHART_ACCENTS = {
     "check_id": "#6366f1",
 }
 DEFAULT_BAR_ACCENT = "#6366f1"
-KPI_PAGE_CSS = """
+DASHBOARD_LAYOUT_CSS = """
 <style>
+/* Pull the page content up so KPIs and filters fit the first viewport
+   on a full-screen MacBook display. */
+.block-container {
+    padding-top: 1.25rem;
+    padding-bottom: 2rem;
+}
+/* Tighter widget spacing so the filter bank stays compact. */
+[data-testid="stWidgetLabel"] {
+    margin-bottom: 0.2rem;
+}
+[data-testid="stExpander"] [data-testid="stVerticalBlock"] {
+    gap: 0.5rem;
+}
+div[data-testid="stMainBlockContainer"] h1 {
+    font-size: 1.9rem;
+    margin-bottom: 0.25rem;
+}
 .asm-kpi-card {
     position: relative;
     background-color: #f0f2f6;
     background-color: light-dark(#f0f2f6, #262729);
     border: 1px solid rgba(120, 127, 140, 0.28);
     border: 1px solid light-dark(rgba(49, 51, 63, 0.2), rgba(250, 250, 250, 0.2));
-    border-radius: 12px;
-    padding: 18px 20px 16px 24px;
+    border-radius: 10px;
+    padding: 10px 14px 10px 18px;
     overflow: hidden;
     color: inherit;
     transition: box-shadow 0.2s ease, transform 0.2s ease;
@@ -91,16 +108,16 @@ KPI_PAGE_CSS = """
     width: 4px;
 }
 .asm-kpi-label {
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 1.35;
     color: inherit;
     opacity: 0.62;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 .asm-kpi-value {
-    font-size: 2.1rem;
+    font-size: 1.55rem;
     line-height: 1.1;
     color: inherit;
     font-variant-numeric: tabular-nums;
@@ -147,43 +164,49 @@ def capitalize_option_label(value: Any) -> str:
 
 def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> db.FilterState:
     with st.expander("Filters", expanded=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
+        row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
+        with row1_col1:
             risk_levels = st.multiselect(
                 "Risk Level",
                 options.get("risk_levels", []),
                 key=f"{key_prefix}_risk",
                 format_func=capitalize_option_label,
             )
+        with row1_col2:
             ports = st.multiselect("Port", options.get("ports", []), key=f"{key_prefix}_port")
-        with col2:
+        with row1_col3:
             cloud_platforms = st.multiselect(
                 "Cloud Platform",
                 options.get("cloud_platforms", []),
                 key=f"{key_prefix}_platform",
                 format_func=capitalize_option_label,
             )
+        with row1_col4:
             cloud_accounts = st.multiselect(
                 "Cloud Account Name",
                 options.get("cloud_accounts", []),
                 key=f"{key_prefix}_account",
                 format_func=capitalize_option_label,
             )
-        with col3:
+        row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
+        with row2_col1:
             check_ids = st.multiselect(
                 "Check ID",
                 options.get("check_ids", []),
                 key=f"{key_prefix}_check",
                 format_func=capitalize_option_label,
             )
+        with row2_col2:
             exposure_levels = st.multiselect(
                 "Exposure Level",
                 options.get("exposure_levels", []),
                 key=f"{key_prefix}_exposure",
                 format_func=capitalize_option_label,
             )
-        search = st.text_input("Endpoint or host search", key=f"{key_prefix}_search")
-        date_range = st.date_input("First Seen date range", value=(), key=f"{key_prefix}_first_seen")
+        with row2_col3:
+            search = st.text_input("Endpoint or host search", key=f"{key_prefix}_search")
+        with row2_col4:
+            date_range = st.date_input("First Seen date range", value=(), key=f"{key_prefix}_first_seen")
     first_seen_start = date_range[0] if isinstance(date_range, tuple) and len(date_range) >= 1 else None
     first_seen_end = date_range[1] if isinstance(date_range, tuple) and len(date_range) >= 2 else None
     return db.FilterState(
@@ -209,17 +232,17 @@ def kpi_card_html(label: str, value: int, key: str) -> str:
     return (
         f'<div class="{card_class}" data-testid="metric-container">'
         f'<div class="asm-kpi-accent" style="background-color: {accent};"></div>'
-        f'<div class="asm-kpi-label">{escaped_label}</div>'
+        f'<div class="asm-kpi-label" title="{escaped_label}">{escaped_label}</div>'
         f'<div class="asm-kpi-value" style="color: {value_color}; font-weight: {value_weight};">{value}</div>'
         "</div>"
     )
 
 
 def render_kpis(kpis: dict[str, int]) -> None:
-    cols = st.columns(3)
+    cols = st.columns(len(KPI_LABELS), gap="small")
     for index, (label, key) in enumerate(KPI_LABELS):
         value = kpis.get(key, 0)
-        cols[index % 3].markdown(kpi_card_html(label, value, key), unsafe_allow_html=True)
+        cols[index].markdown(kpi_card_html(label, value, key), unsafe_allow_html=True)
 
 
 def apply_dashboard_chart_style(figure: go.Figure, height: int | None = None) -> None:
@@ -270,7 +293,7 @@ def exposure_trend_figure(trend: pd.DataFrame):
         )
     figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
     figure.update_yaxes(title_text="Count", rangemode="nonnegative")
-    apply_dashboard_chart_style(figure, height=380)
+    apply_dashboard_chart_style(figure, height=300)
     figure.update_layout(hovermode="x unified")
     return figure
 
@@ -289,7 +312,7 @@ def risk_distribution_figure(risk: pd.DataFrame) -> go.Figure:
         marker={"colors": colors, "line": {"color": "#ffffff", "width": 2}},
         hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
     )
-    apply_dashboard_chart_style(figure, height=380)
+    apply_dashboard_chart_style(figure, height=300)
     figure.update_layout(margin={"l": 16, "r": 16, "t": 40, "b": 16})
     return figure
 
@@ -309,7 +332,7 @@ def distribution_bar_figure(frame: pd.DataFrame, key: str) -> go.Figure:
     figure.update_yaxes(title=None)
     if key == "check_id":
         figure.update_xaxes(tickangle=-35, tickfont={"size": 10})
-    apply_dashboard_chart_style(figure, height=320)
+    apply_dashboard_chart_style(figure, height=260)
     return figure
 
 
@@ -525,10 +548,14 @@ def render_finding_table(connection, result: db.PageResult, page_key: str, allow
     st.markdown(
         """
         <style>
-        div[data-testid="stVerticalBlockBorderWrapper"] {
+        /* Scope the wide-table horizontal scroll to the findings scroll
+           container (marked by .asm-table-scroller) so KPI, filter, and
+           chart rows keep the viewport width. The direct-child chain
+           matches only the scroll block, never the page root block. */
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .asm-table-scroller) {
             overflow-x: auto;
         }
-        div[data-testid="stHorizontalBlock"] {
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .asm-table-scroller) div[data-testid="stHorizontalBlock"] {
             min-width: 1700px;
         }
         </style>
@@ -536,6 +563,7 @@ def render_finding_table(connection, result: db.PageResult, page_key: str, allow
         unsafe_allow_html=True,
     )
     with st.container(height=TABLE_SCROLL_HEIGHT):
+        st.markdown('<div class="asm-table-scroller"></div>', unsafe_allow_html=True)
         render_table_header()
         for index, row in enumerate(result.rows, start=1):
             render_finding_row(connection, row, page_key, index, allow_whitelist)
@@ -555,7 +583,6 @@ def render_current_table(connection, filters: db.FilterState) -> None:
 def current_status_page(connection) -> None:
     st.title("ASM Current Status")
     st.caption("Executive view of active, non-whitelisted attack surface findings.")
-    st.markdown(KPI_PAGE_CSS, unsafe_allow_html=True)
     current_rows = db.fetch_current_kpi_rows(connection)
     now = datetime.datetime.now(datetime.UTC)
     month_start = datetime.date(now.year, now.month, 1)
@@ -566,10 +593,10 @@ def current_status_page(connection) -> None:
         cumulative_mitigated=metrics.cumulative_mitigated_count(trend_rows),
     )
     render_kpis(kpis)
-    st.markdown(CHART_SECTION_DIVIDER_HTML, unsafe_allow_html=True)
-    render_current_charts(current_rows, trend_rows)
     options = db.fetch_filter_options(connection, current_only=True)
     filters = filter_state(options, key_prefix="current")
+    st.markdown(CHART_SECTION_DIVIDER_HTML, unsafe_allow_html=True)
+    render_current_charts(current_rows, trend_rows)
     render_current_table(connection, filters)
 
 
@@ -648,6 +675,7 @@ def whitelist_rules_page(connection) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="ASM Dashboard", layout="wide")
+    st.markdown(DASHBOARD_LAYOUT_CSS, unsafe_allow_html=True)
     if not require_login():
         return
     connection = get_connection()
