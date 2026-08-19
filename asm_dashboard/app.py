@@ -27,7 +27,7 @@ EXPOSURE_TREND_COLORS = {
     "Mitigated": "#1f77b4",
 }
 EXPOSURE_TREND_TITLE = "Exposure Trend"
-CHART_SECTION_DIVIDER_HTML = '<div style="width: 100%; border-top: 1px solid #e5e7eb; margin: 2rem 0 1.5rem 0;"></div>'
+CHART_SECTION_DIVIDER_HTML = '<div style="width: 100%; border-top: 1px solid #e5e7eb; border-top-color: light-dark(#e5e7eb, #3d4351); margin: 2rem 0 1.5rem 0;"></div>'
 KPI_LABELS = [
     ("Active Attack Surface", "active_findings"),
     ("Active High", "active_high"),
@@ -61,26 +61,27 @@ BAR_CHART_ACCENTS = {
     "check_id": "#6366f1",
 }
 DEFAULT_BAR_ACCENT = "#6366f1"
-CHART_GRID_COLOR = "#eef2f7"
-CHART_TEXT_COLOR = "#64748b"
 KPI_PAGE_CSS = """
 <style>
 .asm-kpi-card {
     position: relative;
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
+    background-color: #f0f2f6;
+    background-color: light-dark(#f0f2f6, #262729);
+    border: 1px solid rgba(120, 127, 140, 0.28);
+    border: 1px solid light-dark(rgba(49, 51, 63, 0.2), rgba(250, 250, 250, 0.2));
     border-radius: 12px;
     padding: 18px 20px 16px 24px;
     overflow: hidden;
+    color: inherit;
     transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 .asm-kpi-card:hover {
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.09);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
     transform: translateY(-2px);
 }
 .asm-kpi-card--alert {
-    background-color: #fef2f2;
-    border-color: #fecaca;
+    background-image: linear-gradient(rgba(239, 68, 68, 0.07), rgba(239, 68, 68, 0.07));
+    border-color: rgba(220, 38, 38, 0.5);
 }
 .asm-kpi-accent {
     position: absolute;
@@ -94,12 +95,14 @@ KPI_PAGE_CSS = """
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #64748b;
+    color: inherit;
+    opacity: 0.62;
     margin-bottom: 8px;
 }
 .asm-kpi-value {
     font-size: 2.1rem;
     line-height: 1.1;
+    color: inherit;
     font-variant-numeric: tabular-nums;
 }
 </style>
@@ -199,7 +202,7 @@ def filter_state(options: dict[str, list[Any]], key_prefix: str = "current") -> 
 def kpi_card_html(label: str, value: int, key: str) -> str:
     style = KPI_STYLES.get(key) or {}
     accent = KPI_ACCENTS.get(key, DEFAULT_KPI_ACCENT)
-    value_color = style.get("color", "#0f172a")
+    value_color = style.get("color", "inherit")
     value_weight = style.get("font_weight", "700")
     card_class = "asm-kpi-card asm-kpi-card--alert" if key == "active_high" else "asm-kpi-card"
     escaped_label = html.escape(label)
@@ -220,17 +223,15 @@ def render_kpis(kpis: dict[str, int]) -> None:
 
 
 def apply_dashboard_chart_style(figure: go.Figure, height: int | None = None) -> None:
+    """Apply structural chart styling only.
+
+    Colors (backgrounds, gridlines, fonts, hover labels) are intentionally
+    left unset so Streamlit's built-in plotly theming supplies values that
+    follow the active light/dark theme.
+    """
     figure.update_layout(
         height=height,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#ffffff",
-        font={"color": "#334155", "size": 12},
         margin={"l": 48, "r": 16, "t": 32, "b": 16},
-        hoverlabel={
-            "bgcolor": "#ffffff",
-            "bordercolor": "#cbd5e1",
-            "font": {"color": "#0f172a", "size": 12},
-        },
         legend={
             "orientation": "h",
             "yanchor": "bottom",
@@ -238,19 +239,10 @@ def apply_dashboard_chart_style(figure: go.Figure, height: int | None = None) ->
             "xanchor": "right",
             "x": 1,
             "bgcolor": "rgba(0,0,0,0)",
-            "font": {"color": "#475569", "size": 12},
         },
     )
-    figure.update_xaxes(
-        showgrid=False,
-        tickfont={"color": CHART_TEXT_COLOR, "size": 11},
-        linecolor="#e2e8f0",
-    )
-    figure.update_yaxes(
-        gridcolor=CHART_GRID_COLOR,
-        zeroline=False,
-        tickfont={"color": CHART_TEXT_COLOR, "size": 11},
-    )
+    figure.update_xaxes(showgrid=False)
+    figure.update_yaxes(zeroline=False)
 
 
 def exposure_trend_figure(trend: pd.DataFrame):
@@ -316,7 +308,7 @@ def distribution_bar_figure(frame: pd.DataFrame, key: str) -> go.Figure:
     figure.update_xaxes(title=None)
     figure.update_yaxes(title=None)
     if key == "check_id":
-        figure.update_xaxes(tickangle=-35, tickfont={"color": CHART_TEXT_COLOR, "size": 10})
+        figure.update_xaxes(tickangle=-35, tickfont={"size": 10})
     apply_dashboard_chart_style(figure, height=320)
     return figure
 
