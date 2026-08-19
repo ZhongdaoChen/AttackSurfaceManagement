@@ -593,10 +593,10 @@ def current_status_page(connection) -> None:
         cumulative_mitigated=metrics.cumulative_mitigated_count(trend_rows),
     )
     render_kpis(kpis)
-    options = db.fetch_filter_options(connection, current_only=True)
-    filters = filter_state(options, key_prefix="current")
     st.markdown(CHART_SECTION_DIVIDER_HTML, unsafe_allow_html=True)
     render_current_charts(current_rows, trend_rows)
+    options = db.fetch_filter_options(connection, current_only=True)
+    filters = filter_state(options, key_prefix="current")
     render_current_table(connection, filters)
 
 
