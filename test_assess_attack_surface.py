@@ -231,6 +231,32 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["subscription"], "251239237414")
 
+    def test_non_standard_open_port_for_connectivity_dev_accounts_is_low_risk(self):
+        cases = [
+            ("cloudAccount", {"name": "Connectivity-Dev Development"}, "Connectivity-Dev Development"),
+            ("accountId", "014826645533", "014826645533"),
+        ]
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        for field, value, expected_subscription in cases:
+            with self.subTest(field=field, value=value):
+                endpoint = {
+                    "id": "endpoint-1",
+                    "host": "app.example.com",
+                    "port": 22,
+                    "protocols": ["SSH"],
+                    "portStatus": "OPEN",
+                    field: value,
+                }
+
+                findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0]["risk_level"], "low")
+                self.assertEqual(findings[0]["details"]["subscription"], expected_subscription)
+
     def test_non_standard_open_port_https_sensitive_content_is_high_risk(self):
         endpoint = {
             "id": "endpoint-1",

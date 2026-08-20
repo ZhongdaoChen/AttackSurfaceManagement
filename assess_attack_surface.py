@@ -46,6 +46,8 @@ LOW_RISK_SUBSCRIPTIONS = {
     "cicdtools-prod",
     "mobileprintjob production",
     "251239237414",
+    "connectivity-dev development",
+    "014826645533",
 }
 SUBSCRIPTION_FIELDS = (
     "subscription",
