@@ -50,7 +50,7 @@ KPI_ACCENTS = {
 DEFAULT_KPI_ACCENT = "#2563eb"
 RISK_LEVEL_COLORS = {
     "high": "#d62728",
-    "medium": "#f59e0b",
+    "medium": "#86efac",
     "low": "#16a34a",
     "unknown": "#94a3b8",
 }
@@ -298,18 +298,24 @@ def exposure_trend_figure(trend: pd.DataFrame):
     return figure
 
 
+def risk_distribution_pull_values(risk_levels: list[Any]) -> list[float]:
+    return [0.14 if str(level).strip().lower() == "high" else 0 for level in risk_levels]
+
+
 def risk_distribution_figure(risk: pd.DataFrame) -> go.Figure:
     colors = [
         RISK_LEVEL_COLORS.get(str(level).strip().lower(), DEFAULT_RISK_COLOR) for level in risk["risk_level"]
     ]
+    pull = risk_distribution_pull_values(list(risk["risk_level"]))
     figure = px.pie(risk, names="risk_level", values="count")
     figure.update_traces(
         hole=0.55,
         sort=False,
         direction="clockwise",
-        textinfo="percent",
+        pull=pull,
+        textinfo="label+percent",
         textfont={"color": "#0f172a", "size": 12},
-        marker={"colors": colors, "line": {"color": "#ffffff", "width": 2}},
+        marker={"colors": colors, "line": {"color": "#ffffff", "width": 3}},
         hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
     )
     apply_dashboard_chart_style(figure, height=300)

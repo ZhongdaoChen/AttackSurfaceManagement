@@ -138,6 +138,33 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.EXPOSURE_TREND_COLORS["High Risk"], "#d62728")
         self.assertEqual(app.EXPOSURE_TREND_COLORS["Mitigated"], "#1f77b4")
 
+    def test_risk_level_medium_color_is_light_green(self):
+        import asm_dashboard.app as app
+
+        self.assertEqual(app.RISK_LEVEL_COLORS["medium"], "#86efac")
+        self.assertEqual(app.RISK_LEVEL_COLORS["low"], "#16a34a")
+        self.assertNotEqual(app.RISK_LEVEL_COLORS["medium"], app.RISK_LEVEL_COLORS["low"])
+
+    def test_risk_distribution_pulls_only_high_slice(self):
+        import asm_dashboard.app as app
+
+        risk = pd.DataFrame(
+            [
+                {"risk_level": "low", "count": 120},
+                {"risk_level": "medium", "count": 40},
+                {"risk_level": "high", "count": 1},
+                {"risk_level": "unknown", "count": 2},
+            ]
+        )
+
+        figure = app.risk_distribution_figure(risk)
+        trace = figure.data[0]
+
+        self.assertEqual(tuple(trace.marker.colors), ("#16a34a", "#86efac", "#d62728", "#94a3b8"))
+        self.assertEqual(tuple(trace.pull), (0, 0, 0.14, 0))
+        self.assertEqual(trace.textinfo, "label+percent")
+        self.assertEqual(trace.marker.line.width, 3)
+
     def test_exposure_trend_uses_single_y_axis(self):
         import asm_dashboard.app as app
 
