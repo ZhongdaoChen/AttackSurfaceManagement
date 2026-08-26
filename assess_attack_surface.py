@@ -48,6 +48,8 @@ LOW_RISK_SUBSCRIPTIONS = {
     "251239237414",
     "connectivity-dev development",
     "014826645533",
+    "networkconnectivity",
+    "779205442100",
 }
 SUBSCRIPTION_FIELDS = (
     "subscription",
