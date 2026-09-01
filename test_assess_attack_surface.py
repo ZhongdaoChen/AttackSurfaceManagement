@@ -926,6 +926,160 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["details"]["javascript_assets"][0]["url"], "http://app.example.com:8080/assets/index.js")
         self.assertIn("Use admin for first use", findings[0]["details"]["javascript_assets"][0]["sensitive_snippets"][0])
 
+    def test_llm_low_risk_is_raised_to_local_high_floor_for_default_admin_credentials(self):
+        captured = {}
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
+        response = asm.HttpResponse(
+            url="http://app.example.com:8080/chat/",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"""<html><head><script src="/assets/index.js"></script></head><body></body></html>""",
+        )
+
+        def fetcher(request, timeout, context=None):
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "application/javascript"},
+                body=b"`Enter Account (Use admin for first use)`;`Enter Password (Use admin for first use)`;",
+            )
+
+        def llm_client(prompt):
+            captured["prompt"] = prompt
+            return {
+                "risk_level": "low",
+                "category": "login_page",
+                "confidence": 3,
+                "reason": "The HTML shell does not include sensitive data.",
+                "evidence": "No sensitive content in HTML.",
+                "recommendation": "Keep monitoring.",
+                "why_not_higher": "No secrets in HTML.",
+                "why_not_lower": "No direct exposure.",
+            }
+
+        context = asm.CheckContext(fetcher=fetcher, llm_enabled=True, llm_client=llm_client)
+        content_findings = asm.content_findings_for_response(endpoint, response, context)
+        findings = asm.LlmSensitiveContentChecker().check(endpoint, context)
+
+        self.assertEqual(content_findings, [])
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertEqual(findings[0]["details"]["llm_risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["local_risk_floor"], "high")
+        self.assertIn("default_admin_credential", findings[0]["details"]["local_signals"])
+        self.assertIn("category", captured["prompt"])
+        self.assertIn("why_not_higher", captured["prompt"])
+
+    def test_admin_login_page_is_medium_risk_instead_of_low(self):
+        endpoint = {"id": "endpoint-1", "host": "admin.example.com", "port": 443, "protocols": ["HTTPS"]}
+        response = asm.HttpResponse(
+            url="https://admin.example.com:443/admin/login",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"<html><title>Admin Console</title><form><input type='password'></form></html>",
+        )
+
+        findings = asm.content_findings_for_response(
+            endpoint,
+            response,
+            asm.CheckContext(llm_enabled=False),
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_admin_login_page")
+        self.assertEqual(findings[0]["risk_level"], "medium")
+        self.assertIn("admin_surface", findings[0]["details"]["signals"])
+
+    def test_content_findings_discovers_safe_same_origin_api_endpoint_from_javascript(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
+        response = asm.HttpResponse(
+            url="http://app.example.com:8080/chat/",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"""<html><head><script src="/assets/index.js"></script></head><body></body></html>""",
+        )
+        fetched_urls = []
+        responses = {
+            "http://app.example.com:8080/assets/index.js": asm.HttpResponse(
+                url="http://app.example.com:8080/assets/index.js",
+                status=200,
+                headers={"Content-Type": "application/javascript"},
+                body=b"const configUrl = '/api/config'; const unsafe = '/api/delete-user';",
+            ),
+            "http://app.example.com:8080/api/config": asm.HttpResponse(
+                url="http://app.example.com:8080/api/config",
+                status=200,
+                headers={"Content-Type": "application/json"},
+                body=b'{"api_key":"SECRET123456","mode":"debug"}',
+            ),
+        }
+
+        def fetcher(request, timeout, context=None):
+            fetched_urls.append(request.full_url)
+            return responses[request.full_url]
+
+        findings = asm.content_findings_for_response(
+            endpoint,
+            response,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(
+            fetched_urls,
+            [
+                "http://app.example.com:8080/assets/index.js",
+                "http://app.example.com:8080/api/config",
+            ],
+        )
+        self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertIn("secret_like_value", findings[0]["details"]["signals"])
+        self.assertEqual(findings[0]["details"]["api_endpoints"][0]["url"], "http://app.example.com:8080/api/config")
+
+    def test_api_discovery_scans_javascript_beyond_llm_prompt_truncation(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
+        response = asm.HttpResponse(
+            url="http://app.example.com:8080/chat/",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"""<html><head><script src="/assets/index.js"></script></head><body></body></html>""",
+        )
+        long_prefix = b"x" * (asm.DEFAULT_LLM_BODY_LIMIT_CHARS + 100)
+        fetched_urls = []
+        responses = {
+            "http://app.example.com:8080/assets/index.js": asm.HttpResponse(
+                url="http://app.example.com:8080/assets/index.js",
+                status=200,
+                headers={"Content-Type": "application/javascript"},
+                body=long_prefix + b" const configUrl = '/api/config';",
+            ),
+            "http://app.example.com:8080/api/config": asm.HttpResponse(
+                url="http://app.example.com:8080/api/config",
+                status=200,
+                headers={"Content-Type": "application/json"},
+                body=b'{"api_key":"SECRET123456"}',
+            ),
+        }
+
+        def fetcher(request, timeout, context=None):
+            fetched_urls.append(request.full_url)
+            return responses[request.full_url]
+
+        findings = asm.content_findings_for_response(
+            endpoint,
+            response,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(
+            fetched_urls,
+            [
+                "http://app.example.com:8080/assets/index.js",
+                "http://app.example.com:8080/api/config",
+            ],
+        )
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertIn("secret_like_value", findings[0]["details"]["signals"])
+
     def test_content_findings_skips_cross_origin_javascript_assets(self):
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
         response = asm.HttpResponse(
@@ -1135,6 +1289,40 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertIn("api_key=SECRET123", captured["prompt"])
         self.assertEqual(findings[0]["check_id"], "llm_sensitive_content")
         self.assertEqual(findings[0]["risk_level"], "high")
+
+    def test_llm_checker_records_structured_assessment_fields(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 443}
+        context = asm.CheckContext(
+            llm_enabled=True,
+            llm_client=lambda prompt: {
+                "risk_level": "medium",
+                "category": "admin_surface",
+                "confidence": "8",
+                "reason": "Admin login page exposed.",
+                "evidence": "<title>Admin Console</title>",
+                "recommendation": "Restrict access to trusted networks.",
+                "why_not_higher": "No default credentials or secret values are visible.",
+                "why_not_lower": "The public admin surface increases attack exposure.",
+            },
+            response_summaries={
+                "endpoint-1": {
+                    "url": "https://app.example.com/admin/login",
+                    "status": 200,
+                    "headers": {"Content-Type": "text/html"},
+                    "body_text": "<html><title>Admin Console</title><input type='password'></html>",
+                    "local_signals": ["admin_surface"],
+                    "local_risk_floor": "medium",
+                }
+            },
+        )
+
+        findings = asm.LlmSensitiveContentChecker().check(endpoint, context)
+
+        self.assertEqual(findings[0]["risk_level"], "medium")
+        self.assertEqual(findings[0]["details"]["category"], "admin_surface")
+        self.assertEqual(findings[0]["details"]["confidence"], 8)
+        self.assertEqual(findings[0]["details"]["why_not_higher"], "No default credentials or secret values are visible.")
+        self.assertEqual(findings[0]["details"]["why_not_lower"], "The public admin surface increases attack exposure.")
 
     def test_llm_checker_receives_javascript_asset_summary_when_enabled(self):
         captured = {}
@@ -1469,7 +1657,8 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         )
 
         self.assertIn("If no sensitive content is present, evidence should be a concise Chinese summary", prompt)
-        self.assertIn("If sensitive content is present, evidence should include the relevant HTTP/HTML response snippet", prompt)
+        self.assertIn("If sensitive content is present, evidence should include the relevant HTTP/HTML/JavaScript/API response snippet", prompt)
+        self.assertIn("category, confidence (0-10 integer), reason, evidence", prompt)
 
     def test_arg_parser_defaults_to_full_scan_operational_settings(self):
         args = asm.build_arg_parser().parse_args([])

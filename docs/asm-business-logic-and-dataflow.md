@@ -6,7 +6,7 @@
 ## 1. 系统定位
 
 从 Wiz 拉取对外暴露的 Application Endpoints，对可达的 HTTP/HTTPS 服务做基础攻击面检查
-（重定向跟随、HTML/同源 JavaScript 敏感内容启发式、非标准端口探测），可选用 OpenAI 兼容 LLM（DashScope/Qwen）
+（重定向跟随、HTML/同源 JavaScript/安全只读 API 敏感内容启发式、非标准端口探测），可选用 OpenAI 兼容 LLM（DashScope/Qwen）
 做内容级判断；结果多路扇出到 JSONL/CSV 文件、阿里云 OSS、RDS PostgreSQL；
 Streamlit Dashboard 以 RDS 为单一事实源，向 AppSec 团队展示当前攻击面、历史趋势和白名单治理。
 
@@ -99,29 +99,35 @@ Streamlit Dashboard 以 RDS 为单一事实源，向 AppSec 团队展示当前�
 ### 4.4 内容判定 `content_findings_for_response`
 
 对最终响应做本地启发式；如果最终响应是 HTML，会额外抓取最多 5 个直接引用的同源 `.js` 文件，
-把 JavaScript 摘要和敏感片段并入响应 summary。**LLM 启用且状态 200 时跳过本地启发式**，
-交由 LLM checker 出唯一 finding，但 LLM prompt 会包含 JavaScript 资产摘要。
+再从 HTML/JS 中提取最多 5 个安全只读的同源 API endpoint（例如 `/api/config`、`/swagger`、
+`/openapi.json`、`/graphql`、`/actuator/info`、`/health`）做 GET 探测。JavaScript/API 摘要和敏感片段会并入
+response summary。**LLM 启用且状态 200 时跳过本地启发式**，交由 LLM checker 出唯一 finding；
+LLM prompt 会包含 JavaScript/API 资产摘要、本地 `local_signals` 和 `local_risk_floor`。
 
 | 观察 | check_id | risk |
 | --- | --- | --- |
 | 404 且无泄露线索 | `https_not_found` | low |
 | 404 但 exposureLevel=HIGH / Server、X-Powered-By 带版本 / body 含框架版本或 internal、stack trace、debug、bucket 等关键词 | `https_not_found_review` | medium |
-| HTML/JS 命中敏感信号：`index of /`（目录列表）、默认 admin 凭据提示、secret/api_key/token/private_key 赋值模式、Python/通用错误栈、backup.(zip\|tar\|tgz\|gz\|sql) | `https_sensitive_content_heuristic` | high |
-| 登录页（password 输入框或 login/sign in 文案） | `https_login_page` | low |
+| HTML/JS/API 命中高置信敏感信号：默认 admin 凭据提示、`index of /`（目录列表）、secret/api_key/token/private_key 赋值模式、Python/通用错误栈、backup.(zip\|tar\|tgz\|gz\|sql) | `https_sensitive_content_heuristic` | high |
+| 登录页同时命中管理面信号（admin console、管理台、Grafana/Jenkins/Kibana/Swagger/OpenAPI/Actuator 等） | `https_admin_login_page` | medium |
+| 普通登录页（password 输入框或 login/sign in 文案） | `https_login_page` | low |
+| 非登录页但命中管理面信号 | `https_admin_surface_review` | medium |
 | 其余可达 200 | `https_review_required` | medium |
 
 ### 4.5 LLM 判定 — `llm_sensitive_content`
 
-- 复用 checker 阶段缓存的响应摘要（`context.response_summaries`，body 截断到上限）。
+- 复用 checker 阶段缓存的响应摘要（`context.response_summaries`，HTML/JS/API body 均截断到上限）。
 - OpenAI 兼容客户端（默认 DashScope `qwen-plus`，`temperature=0`），system prompt 固定为
-  「评估敏感数据泄露，只返回 JSON」；返回 `risk_level(low|medium|high|unknown)/reason/evidence/recommendation`。
+  「评估敏感数据泄露，只返回 JSON」；prompt 要求返回 `risk_level(low|medium|high|unknown)`、`category`、
+  `confidence(0-10)`、`reason`、`evidence`、`recommendation`、`why_not_higher`、`why_not_lower`。
+- 本地高置信信号会生成 `local_risk_floor`；LLM 返回的风险不能低于该下限，避免默认凭据、secret 等确定性证据被降级。
 - evidence 要求：无敏感内容时给简短中文结论；有敏感内容时只摘敏感片段，不贴全量响应。
 
 ### 4.6 risk_level 语义
 
-- `high`：疑似敏感内容暴露；或敏感非标准端口内容不可判定且无订阅例外。
-- `medium`：需人工 review（非登录页的可达页面、带泄露线索的 404、重定向跟随失败）。
-- `low`：根路径无直接敏感暴露（登录页、干净 404、connection reset、证书错误、80 未跳 HTTPS、低优先级订阅例外）。
+- `high`：默认凭据、secret、目录列表/备份文件、错误栈等高置信敏感内容暴露；或敏感非标准端口内容不可判定且无订阅例外。
+- `medium`：需人工 review（管理后台登录页、管理面暴露、非登录页的可达页面、带泄露线索的 404、重定向跟随失败）。
+- `low`：根路径未观察到直接敏感暴露（普通登录页、干净 404、connection reset、证书错误、80 未跳 HTTPS、低优先级订阅例外）。
 - `unknown`：checker/网络异常。
 
 ## 5. 存储模型与 finding 生命周期

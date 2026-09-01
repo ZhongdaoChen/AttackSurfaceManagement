@@ -29,11 +29,22 @@ DEFAULT_BODY_LIMIT_BYTES = 64 * 1024
 DEFAULT_LLM_BODY_LIMIT_CHARS = 12000
 DEFAULT_JS_ASSET_LIMIT_BYTES = 512 * 1024
 MAX_JAVASCRIPT_ASSETS = 5
+DEFAULT_API_ENDPOINT_LIMIT_BYTES = 64 * 1024
+MAX_API_ENDPOINTS = 5
 DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_QWEN_MODEL = "qwen-plus"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
 NON_STANDARD_PORT_PROBE_TIMEOUT_SECONDS = 5
+RISK_RANK = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+SIGNAL_RISK_LEVELS = {
+    "admin_surface": "medium",
+    "directory_listing": "high",
+    "default_admin_credential": "high",
+    "secret_like_value": "high",
+    "error_stack_trace": "high",
+    "backup_artifact": "high",
+}
 LOW_RISK_SUBSCRIPTIONS = {
     "fdp",
     "197575089658",
@@ -464,6 +475,10 @@ def content_findings_for_response(
     detail_overrides: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     summary = summarize_response(response, context)
+    signals = detect_sensitive_signals(response_detection_text(summary))
+    if signals:
+        summary["local_signals"] = signals
+        summary["local_risk_floor"] = risk_floor_for_signals(signals)
     endpoint_id = str(endpoint.get("id", ""))
     if endpoint_id:
         context.response_summaries[endpoint_id] = summary
@@ -501,8 +516,8 @@ def content_findings_for_response(
             )
         ]
 
-    signals = detect_sensitive_signals(response_detection_text(summary))
-    if signals:
+    risk_floor = str(summary.get("local_risk_floor") or "unknown")
+    if signals and risk_floor == "high":
         return [
             finding(
                 endpoint,
@@ -515,6 +530,17 @@ def content_findings_for_response(
         ]
 
     if looks_like_login_page(summary["body_text"]):
+        if "admin_surface" in signals:
+            return [
+                finding(
+                    endpoint,
+                    "https_admin_login_page",
+                    "medium",
+                    "HTTPS endpoint appears to expose an administrative login page.",
+                    "Confirm business need; restrict administrative surfaces with VPN, allowlists, SSO, MFA, and rate limiting.",
+                    details={**details, "signals": signals},
+                )
+            ]
         return [
             finding(
                 endpoint,
@@ -523,6 +549,18 @@ def content_findings_for_response(
                 "HTTPS endpoint appears to be a login page rather than direct sensitive content.",
                 "Keep authentication enforced; validate MFA, rate limiting, and WAF controls separately.",
                 details=details,
+            )
+        ]
+
+    if signals:
+        return [
+            finding(
+                endpoint,
+                "https_admin_surface_review",
+                "medium",
+                f"HTTPS endpoint contains administrative-surface signals: {', '.join(signals)}.",
+                "Review whether this administrative surface should be internet-facing; restrict access where possible.",
+                details={**details, "signals": signals},
             )
         ]
 
@@ -593,7 +631,8 @@ class LlmSensitiveContentChecker:
 
         prompt = build_llm_prompt(endpoint, summary)
         result = context.llm_client(prompt)
-        risk_level = normalize_risk(result.get("risk_level"))
+        llm_risk_level = normalize_risk(result.get("risk_level"))
+        risk_level = higher_risk(llm_risk_level, summary.get("local_risk_floor"))
         return [
             finding(
                 endpoint,
@@ -604,7 +643,11 @@ class LlmSensitiveContentChecker:
                 details={
                     **summary_without_body(summary),
                     "reason": result.get("reason"),
+                    "category": result.get("category"),
+                    "confidence": normalize_confidence(result.get("confidence")),
                     "llm_risk_level": result.get("risk_level"),
+                    "why_not_higher": result.get("why_not_higher"),
+                    "why_not_lower": result.get("why_not_lower"),
                 },
             )
         ]
@@ -884,6 +927,11 @@ def summarize_response(response: HttpResponse, context: CheckContext | None = No
             summary["javascript_assets"] = javascript_assets
         if javascript_asset_errors:
             summary["javascript_asset_errors"] = javascript_asset_errors
+        api_endpoints, api_endpoint_errors = summarize_api_endpoints(response, summary, context)
+        if api_endpoints:
+            summary["api_endpoints"] = api_endpoints
+        if api_endpoint_errors:
+            summary["api_endpoint_errors"] = api_endpoint_errors
     return summary
 
 
@@ -895,6 +943,13 @@ def summary_without_body(summary: dict[str, Any]) -> dict[str, Any]:
             {key: value for key, value in asset.items() if key != "body_text"}
             for asset in javascript_assets
             if isinstance(asset, dict)
+        ]
+    api_endpoints = result.get("api_endpoints")
+    if isinstance(api_endpoints, list):
+        result["api_endpoints"] = [
+            {key: value for key, value in endpoint.items() if key != "body_text"}
+            for endpoint in api_endpoints
+            if isinstance(endpoint, dict)
         ]
     return result
 
@@ -918,14 +973,18 @@ def summarize_javascript_assets(
 
         asset_body_text = decode_body(asset_response.body)
         content_type = asset_response.headers.get("Content-Type") or asset_response.headers.get("content-type")
+        api_candidate_urls = safe_api_urls_from_texts([asset_body_text], response.url)
+        asset_summary = {
+            "url": asset_response.url,
+            "status": asset_response.status,
+            "content_type": content_type,
+            "body_text": asset_body_text[:DEFAULT_LLM_BODY_LIMIT_CHARS],
+            "sensitive_snippets": sensitive_snippets(asset_body_text),
+        }
+        if api_candidate_urls:
+            asset_summary["api_candidate_urls"] = api_candidate_urls
         assets.append(
-            {
-                "url": asset_response.url,
-                "status": asset_response.status,
-                "content_type": content_type,
-                "body_text": asset_body_text[:DEFAULT_LLM_BODY_LIMIT_CHARS],
-                "sensitive_snippets": sensitive_snippets(asset_body_text),
-            }
+            asset_summary
         )
     return assets, errors
 
@@ -964,13 +1023,115 @@ def javascript_asset_urls(body_text: str, base_url: str) -> list[str]:
     return urls
 
 
+def summarize_api_endpoints(
+    response: HttpResponse,
+    summary: dict[str, Any],
+    context: CheckContext,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    endpoints = []
+    errors = []
+    for url in api_endpoint_urls(summary, response.url):
+        try:
+            api_response = fetch_url_for_absolute_url(url, context, body_limit_bytes=DEFAULT_API_ENDPOINT_LIMIT_BYTES)
+        except (urllib.error.URLError, ValueError, http.client.HTTPException, OSError, ConnectionResetError) as exc:
+            errors.append({"url": url, "error": redirect_fetch_error_reason(exc)})
+            continue
+
+        body_text = decode_body(api_response.body)
+        content_type = api_response.headers.get("Content-Type") or api_response.headers.get("content-type")
+        endpoints.append(
+            {
+                "url": api_response.url,
+                "status": api_response.status,
+                "content_type": content_type,
+                "body_text": body_text[:DEFAULT_LLM_BODY_LIMIT_CHARS],
+                "sensitive_snippets": sensitive_snippets(body_text),
+            }
+        )
+    return endpoints, errors
+
+
+def api_endpoint_urls(summary: dict[str, Any], base_url: str) -> list[str]:
+    texts = [str(summary.get("body_text") or "")]
+    urls = []
+    seen = set()
+    javascript_assets = summary.get("javascript_assets")
+    if isinstance(javascript_assets, list):
+        for asset in javascript_assets:
+            if isinstance(asset, dict):
+                texts.append(str(asset.get("body_text") or ""))
+                candidates = asset.get("api_candidate_urls")
+                if isinstance(candidates, list):
+                    for candidate in candidates:
+                        candidate_url = str(candidate or "").strip()
+                        if candidate_url and candidate_url not in seen:
+                            seen.add(candidate_url)
+                            urls.append(candidate_url)
+                            if len(urls) >= MAX_API_ENDPOINTS:
+                                return urls
+
+    for url in safe_api_urls_from_texts(texts, base_url):
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= MAX_API_ENDPOINTS:
+            return urls
+    return urls
+
+
+def safe_api_urls_from_texts(texts: list[str], base_url: str) -> list[str]:
+    base = urllib.parse.urlparse(base_url)
+    urls: list[str] = []
+    seen: set[str] = set()
+    path_pattern = re.compile(
+        r"""(?:"|'|`)(/(?:api|swagger|swagger-ui|openapi|graphql|actuator|health)[^"'`\s<>{}]*)""",
+        flags=re.IGNORECASE,
+    )
+    absolute_pattern = re.compile(r"""https?://[^\s"'`<>{}]+""", flags=re.IGNORECASE)
+    for text in texts:
+        candidates = [match.group(1) for match in path_pattern.finditer(text)]
+        candidates.extend(match.group(0) for match in absolute_pattern.finditer(text))
+        for candidate in candidates:
+            resolved = urllib.parse.urljoin(base_url, html.unescape(candidate).strip())
+            parsed = urllib.parse.urlparse(resolved)
+            if parsed.scheme.lower() not in {"http", "https"}:
+                continue
+            if (parsed.scheme.lower(), parsed.netloc.lower()) != (base.scheme.lower(), base.netloc.lower()):
+                continue
+            if not is_safe_readonly_api_path(parsed.path):
+                continue
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            urls.append(resolved)
+            if len(urls) >= MAX_API_ENDPOINTS:
+                return urls
+    return urls
+
+
+def is_safe_readonly_api_path(path: str) -> bool:
+    lowered = path.lower().rstrip("/") or "/"
+    if re.search(r"(delete|remove|update|create|insert|submit|save|upload|action|execute|run|start|stop|restart)", lowered):
+        return False
+    if lowered in {"/graphql", "/health", "/api/health", "/actuator/info", "/actuator/health"}:
+        return True
+    if lowered.startswith(("/api/config", "/api/settings", "/api/status", "/api/version", "/api/info")):
+        return True
+    if lowered.startswith(("/swagger", "/swagger-ui", "/openapi")):
+        return True
+    if lowered.endswith(("/openapi.json", "/swagger.json", "/api-docs")):
+        return True
+    return False
+
+
 def sensitive_snippets(body_text: str, max_snippets: int = 5, context_chars: int = 120) -> list[str]:
     patterns = [
         r"(?i)(?:enter (?:account|user(?:name)?|password)[^`'\"\n\r]{0,80}use admin for first use)",
         r"(?i)(?:use admin for first use)",
         r"(?i)(?:首次使用请输入\s*admin)",
         r"(?i)(?:admin\s*/\s*admin)",
-        r"(?i)(api[_-]?key|secret|access[_-]?token|private[_-]?key)\s*[:=]\s*['\"]?[a-z0-9_\-/.+=]{8,}",
+        r"(?i)['\"]?(api[_-]?key|secret|access[_-]?token|private[_-]?key)['\"]?\s*[:=]\s*['\"]?[a-z0-9_\-/.+=]{8,}",
         r"(?i)\bbackup\.(?:zip|tar|tgz|gz|sql)\b",
         r"(?i)traceback \(most recent call last\)|stack trace",
         r"(?i)index of /",
@@ -987,7 +1148,11 @@ def sensitive_snippets(body_text: str, max_snippets: int = 5, context_chars: int
 
 
 def response_detection_text(summary: dict[str, Any]) -> str:
-    parts = [str(summary.get("body_text") or "")]
+    parts = [
+        str(summary.get("url") or ""),
+        str(summary.get("title") or ""),
+        str(summary.get("body_text") or ""),
+    ]
     javascript_assets = summary.get("javascript_assets")
     if isinstance(javascript_assets, list):
         for asset in javascript_assets:
@@ -995,6 +1160,15 @@ def response_detection_text(summary: dict[str, Any]) -> str:
                 continue
             parts.append(str(asset.get("body_text") or ""))
             snippets = asset.get("sensitive_snippets")
+            if isinstance(snippets, list):
+                parts.extend(str(snippet) for snippet in snippets)
+    api_endpoints = summary.get("api_endpoints")
+    if isinstance(api_endpoints, list):
+        for endpoint in api_endpoints:
+            if not isinstance(endpoint, dict):
+                continue
+            parts.append(str(endpoint.get("body_text") or ""))
+            snippets = endpoint.get("sensitive_snippets")
             if isinstance(snippets, list):
                 parts.extend(str(snippet) for snippet in snippets)
     return "\n".join(part for part in parts if part)
@@ -1034,6 +1208,8 @@ def extract_title(body: bytes) -> str | None:
 def detect_sensitive_signals(body_text: str) -> list[str]:
     lowered = body_text.lower()
     signals = []
+    if re.search(r"(?i)(admin console|admin portal|admin login|admin dashboard|管理台|管理端|后台|grafana|jenkins|kibana|swagger|openapi|actuator|/admin(?:/|\b))", body_text):
+        signals.append("admin_surface")
     if "index of /" in lowered:
         signals.append("directory_listing")
     if re.search(
@@ -1041,13 +1217,38 @@ def detect_sensitive_signals(body_text: str) -> list[str]:
         body_text,
     ):
         signals.append("default_admin_credential")
-    if re.search(r"(?i)(api[_-]?key|secret|access[_-]?token|private[_-]?key)\s*[:=]\s*['\"]?[a-z0-9_\-/.+=]{8,}", body_text):
+    if re.search(r"(?i)['\"]?(api[_-]?key|secret|access[_-]?token|private[_-]?key)['\"]?\s*[:=]\s*['\"]?[a-z0-9_\-/.+=]{8,}", body_text):
         signals.append("secret_like_value")
     if "traceback (most recent call last)" in lowered or "stack trace" in lowered:
         signals.append("error_stack_trace")
     if re.search(r"(?i)\bbackup\.(zip|tar|tgz|gz|sql)\b", body_text):
         signals.append("backup_artifact")
     return signals
+
+
+def risk_floor_for_signals(signals: list[str]) -> str:
+    floor = "unknown"
+    for signal in signals:
+        floor = higher_risk(floor, SIGNAL_RISK_LEVELS.get(signal, "unknown"))
+    return floor
+
+
+def higher_risk(left: Any, right: Any) -> str:
+    normalized_left = normalize_risk(left)
+    normalized_right = normalize_risk(right)
+    if RISK_RANK[normalized_right] > RISK_RANK[normalized_left]:
+        return normalized_right
+    return normalized_left
+
+
+def normalize_confidence(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        confidence = int(float(str(value).strip()))
+    except ValueError:
+        return None
+    return max(0, min(10, confidence))
 
 
 def https_404_review_reasons(endpoint: dict[str, Any], summary: dict[str, Any]) -> list[str]:
@@ -1083,11 +1284,17 @@ def looks_like_login_page(body_text: str) -> bool:
 def build_llm_prompt(endpoint: dict[str, Any], summary: dict[str, Any]) -> str:
     return (
         "Assess whether this internet-facing application endpoint response directly leaks potentially sensitive "
-        "content. If it is only a normal login page, mark risk_level as low. Return JSON with keys: "
-        "risk_level (low|medium|high|unknown), reason, evidence, recommendation. "
+        "content. The response summary may include HTML, directly referenced same-origin JavaScript assets, "
+        "safely probed same-origin API endpoints, local_signals, and local_risk_floor. Treat local_risk_floor "
+        "as the minimum risk level supported by deterministic evidence; do not return a lower risk unless you "
+        "explicitly explain why the deterministic evidence is not applicable. If it is only a normal user login "
+        "page, mark risk_level as low. If it is an administrative login page, mark risk_level as medium unless "
+        "default credentials, secrets, or sensitive data are present. Return JSON with keys: "
+        "risk_level (low|medium|high|unknown), category, confidence (0-10 integer), reason, evidence, "
+        "recommendation, why_not_higher, why_not_lower. "
         "If no sensitive content is present, evidence should be a concise Chinese summary such as "
         "'这是一个登录页面，没有敏感数据'. If sensitive content is present, evidence should include the relevant "
-        "HTTP/HTML response snippet that appears sensitive, not the entire response.\n\n"
+        "HTTP/HTML/JavaScript/API response snippet that appears sensitive, not the entire response.\n\n"
         f"Endpoint JSON:\n{json.dumps(endpoint, ensure_ascii=False, separators=(',', ':'))}\n\n"
         f"HTTP response summary and truncated body (not redacted):\n"
         f"{json.dumps(summary, ensure_ascii=False, separators=(',', ':'))}"
