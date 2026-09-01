@@ -283,6 +283,32 @@ class AssessAttackSurfaceTests(unittest.TestCase):
                 self.assertEqual(findings[0]["risk_level"], "low")
                 self.assertEqual(findings[0]["details"]["subscription"], expected_subscription)
 
+    def test_non_standard_open_port_for_bitbucket_prd_accounts_is_low_risk(self):
+        cases = [
+            ("cloudAccount", {"name": "adidas-linked-bitbucket-prd-cn"}, "adidas-linked-bitbucket-prd-cn"),
+            ("accountId", "568986100496", "568986100496"),
+        ]
+
+        def fetcher(request, timeout, context=None):
+            raise asm.urllib.error.URLError("connection refused")
+
+        for field, value, expected_subscription in cases:
+            with self.subTest(field=field, value=value):
+                endpoint = {
+                    "id": "endpoint-1",
+                    "host": "app.example.com",
+                    "port": 22,
+                    "protocols": ["SSH"],
+                    "portStatus": "OPEN",
+                    field: value,
+                }
+
+                findings = asm.NonStandardPortChecker().check(endpoint, asm.CheckContext(fetcher=fetcher))
+
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0]["risk_level"], "low")
+                self.assertEqual(findings[0]["details"]["subscription"], expected_subscription)
+
     def test_non_standard_open_port_https_sensitive_content_is_high_risk(self):
         endpoint = {
             "id": "endpoint-1",
@@ -348,6 +374,62 @@ class AssessAttackSurfaceTests(unittest.TestCase):
             findings[0]["details"]["http_probe_result"],
             "https failed: wrong version number; http returned HTTP 200",
         )
+
+    def test_non_standard_open_port_follows_http_redirect_to_login_page(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 8080,
+            "protocols": ["HTTP"],
+            "portStatus": "OPEN",
+        }
+        fetched_urls = []
+        responses = {
+            "http://app.example.com:8080/": asm.HttpResponse(
+                url="http://app.example.com:8080/",
+                status=307,
+                headers={"Location": "/chat/"},
+                body=b"",
+            ),
+            "http://app.example.com:8080/chat/": asm.HttpResponse(
+                url="http://app.example.com:8080/chat/",
+                status=200,
+                headers={"Content-Type": "text/html"},
+                body=b"<html><title>Sign in</title><input type='password'></html>",
+            ),
+        }
+
+        def fetcher(request, timeout, context=None):
+            fetched_urls.append(request.full_url)
+            if request.full_url.startswith("https://"):
+                raise asm.urllib.error.URLError("wrong version number")
+            return responses[request.full_url]
+
+        findings = asm.NonStandardPortChecker().check(
+            endpoint,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(
+            fetched_urls,
+            [
+                "https://app.example.com:8080/",
+                "http://app.example.com:8080/",
+                "http://app.example.com:8080/chat/",
+            ],
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_login_page")
+        self.assertEqual(findings[0]["risk_level"], "low")
+        self.assertEqual(findings[0]["details"]["probe_scheme"], "http")
+        self.assertEqual(
+            findings[0]["details"]["http_probe_result"],
+            "https failed: wrong version number; http returned HTTP 307",
+        )
+        self.assertEqual(findings[0]["details"]["initial_status"], 307)
+        self.assertEqual(findings[0]["details"]["initial_location"], "/chat/")
+        self.assertEqual(findings[0]["details"]["final_url"], "http://app.example.com:8080/chat/")
+        self.assertEqual(findings[0]["details"]["redirect_chain"][0]["resolved_url"], "http://app.example.com:8080/chat/")
 
     def test_non_standard_open_port_probe_uses_short_timeout(self):
         endpoint = {
@@ -806,6 +888,80 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(findings[0]["details"]["url"], "https://app.example.com/final")
 
+    def test_content_findings_fetches_same_origin_javascript_for_sensitive_signals(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
+        response = asm.HttpResponse(
+            url="http://app.example.com:8080/chat/",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"""
+                <html>
+                  <head><script type="module" src="/assets/index.js"></script></head>
+                  <body><div id="root"></div></body>
+                </html>
+            """,
+        )
+        fetched_urls = []
+
+        def fetcher(request, timeout, context=None):
+            fetched_urls.append(request.full_url)
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "application/javascript"},
+                body=b"`Enter Account (Use admin for first use)`;`Enter Password (Use admin for first use)`;",
+            )
+
+        findings = asm.content_findings_for_response(
+            endpoint,
+            response,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(fetched_urls, ["http://app.example.com:8080/assets/index.js"])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["check_id"], "https_sensitive_content_heuristic")
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertIn("default_admin_credential", findings[0]["details"]["signals"])
+        self.assertEqual(findings[0]["details"]["javascript_assets"][0]["url"], "http://app.example.com:8080/assets/index.js")
+        self.assertIn("Use admin for first use", findings[0]["details"]["javascript_assets"][0]["sensitive_snippets"][0])
+
+    def test_content_findings_skips_cross_origin_javascript_assets(self):
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
+        response = asm.HttpResponse(
+            url="http://app.example.com:8080/chat/",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"""
+                <html>
+                  <head>
+                    <script src="https://cdn.example.com/app.js"></script>
+                    <script src="/assets/app.js"></script>
+                  </head>
+                  <body><div id="root"></div></body>
+                </html>
+            """,
+        )
+        fetched_urls = []
+
+        def fetcher(request, timeout, context=None):
+            fetched_urls.append(request.full_url)
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "application/javascript"},
+                body=b"console.log('public app');",
+            )
+
+        findings = asm.content_findings_for_response(
+            endpoint,
+            response,
+            asm.CheckContext(fetcher=fetcher, llm_enabled=False),
+        )
+
+        self.assertEqual(fetched_urls, ["http://app.example.com:8080/assets/app.js"])
+        self.assertEqual(findings[0]["details"]["javascript_assets"][0]["url"], "http://app.example.com:8080/assets/app.js")
+
     def test_https_content_checker_reports_tls_certificate_error(self):
         endpoint = {"id": "endpoint-1", "host": "lb.example.com", "port": 443, "protocols": ["HTTPS"]}
 
@@ -979,6 +1135,43 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertIn("api_key=SECRET123", captured["prompt"])
         self.assertEqual(findings[0]["check_id"], "llm_sensitive_content")
         self.assertEqual(findings[0]["risk_level"], "high")
+
+    def test_llm_checker_receives_javascript_asset_summary_when_enabled(self):
+        captured = {}
+        endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
+        response = asm.HttpResponse(
+            url="http://app.example.com:8080/chat/",
+            status=200,
+            headers={"Content-Type": "text/html"},
+            body=b"""<html><head><script src="/assets/app.js"></script></head><body></body></html>""",
+        )
+
+        def fetcher(request, timeout, context=None):
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "application/javascript"},
+                body=b"`Enter Account (Use admin for first use)`;`Enter Password (Use admin for first use)`;",
+            )
+
+        def llm_client(prompt):
+            captured["prompt"] = prompt
+            return {
+                "risk_level": "high",
+                "reason": "Default admin credential hints are exposed in JavaScript.",
+                "evidence": "Use admin for first use",
+                "recommendation": "Remove default credential hints and enforce credential rotation.",
+            }
+
+        context = asm.CheckContext(fetcher=fetcher, llm_enabled=True, llm_client=llm_client)
+        content_findings = asm.content_findings_for_response(endpoint, response, context)
+        findings = asm.LlmSensitiveContentChecker().check(endpoint, context)
+
+        self.assertEqual(content_findings, [])
+        self.assertEqual(findings[0]["check_id"], "llm_sensitive_content")
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertIn("javascript_assets", captured["prompt"])
+        self.assertIn("Use admin for first use", captured["prompt"])
 
     def test_llm_checker_preserves_http_status_for_csv_output(self):
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 443}

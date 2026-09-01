@@ -6,7 +6,7 @@
 ## 1. 系统定位
 
 从 Wiz 拉取对外暴露的 Application Endpoints，对可达的 HTTP/HTTPS 服务做基础攻击面检查
-（重定向跟随、敏感内容启发式、非标准端口探测），可选用 OpenAI 兼容 LLM（DashScope/Qwen）
+（重定向跟随、HTML/同源 JavaScript 敏感内容启发式、非标准端口探测），可选用 OpenAI 兼容 LLM（DashScope/Qwen）
 做内容级判断；结果多路扇出到 JSONL/CSV 文件、阿里云 OSS、RDS PostgreSQL；
 Streamlit Dashboard 以 RDS 为单一事实源，向 AppSec 团队展示当前攻击面、历史趋势和白名单治理。
 
@@ -98,13 +98,15 @@ Streamlit Dashboard 以 RDS 为单一事实源，向 AppSec 团队展示当前�
 
 ### 4.4 内容判定 `content_findings_for_response`
 
-对最终响应做本地启发式；**LLM 启用且状态 200 时跳过本地启发式**，交由 LLM checker 出唯一 finding。
+对最终响应做本地启发式；如果最终响应是 HTML，会额外抓取最多 5 个直接引用的同源 `.js` 文件，
+把 JavaScript 摘要和敏感片段并入响应 summary。**LLM 启用且状态 200 时跳过本地启发式**，
+交由 LLM checker 出唯一 finding，但 LLM prompt 会包含 JavaScript 资产摘要。
 
 | 观察 | check_id | risk |
 | --- | --- | --- |
 | 404 且无泄露线索 | `https_not_found` | low |
 | 404 但 exposureLevel=HIGH / Server、X-Powered-By 带版本 / body 含框架版本或 internal、stack trace、debug、bucket 等关键词 | `https_not_found_review` | medium |
-| body 命中敏感信号：`index of /`（目录列表）、secret/api_key/token/private_key 赋值模式、Python/通用错误栈、backup.(zip\|tar\|tgz\|gz\|sql) | `https_sensitive_content_heuristic` | high |
+| HTML/JS 命中敏感信号：`index of /`（目录列表）、默认 admin 凭据提示、secret/api_key/token/private_key 赋值模式、Python/通用错误栈、backup.(zip\|tar\|tgz\|gz\|sql) | `https_sensitive_content_heuristic` | high |
 | 登录页（password 输入框或 login/sign in 文案） | `https_login_page` | low |
 | 其余可达 200 | `https_review_required` | medium |
 

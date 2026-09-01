@@ -27,6 +27,8 @@ import wiz_auth_poc
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_BODY_LIMIT_BYTES = 64 * 1024
 DEFAULT_LLM_BODY_LIMIT_CHARS = 12000
+DEFAULT_JS_ASSET_LIMIT_BYTES = 512 * 1024
+MAX_JAVASCRIPT_ASSETS = 5
 DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_QWEN_MODEL = "qwen-plus"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
@@ -50,6 +52,8 @@ LOW_RISK_SUBSCRIPTIONS = {
     "014826645533",
     "networkconnectivity",
     "779205442100",
+    "adidas-linked-bitbucket-prd-cn",
+    "568986100496",
 }
 SUBSCRIPTION_FIELDS = (
     "subscription",
@@ -115,6 +119,16 @@ def fetch_url(
     timeout: int,
     context: ssl.SSLContext | None = None,
 ) -> HttpResponse:
+    body_limit_bytes = getattr(request, "_asm_body_limit_bytes", DEFAULT_BODY_LIMIT_BYTES)
+    return fetch_url_with_body_limit(request, timeout, context, body_limit_bytes)
+
+
+def fetch_url_with_body_limit(
+    request: urllib.request.Request,
+    timeout: int,
+    context: ssl.SSLContext | None = None,
+    body_limit_bytes: int = DEFAULT_BODY_LIMIT_BYTES,
+) -> HttpResponse:
     handlers: list[Any] = [NoRedirectHandler]
     if context is not None:
         handlers.append(urllib.request.HTTPSHandler(context=context))
@@ -122,7 +136,7 @@ def fetch_url(
     try:
         response_context = opener.open(request, timeout=timeout)
         with response_context as response:
-            body = response.read(DEFAULT_BODY_LIMIT_BYTES)
+            body = response.read(body_limit_bytes)
             status = getattr(response, "status", None)
             if status is None:
                 status = response.getcode()
@@ -133,7 +147,7 @@ def fetch_url(
                 body=body,
             )
     except urllib.error.HTTPError as exc:
-        body = exc.read(DEFAULT_BODY_LIMIT_BYTES)
+        body = exc.read(body_limit_bytes)
         return HttpResponse(
             url=request.full_url,
             status=exc.code,
@@ -158,7 +172,11 @@ def ssl_context_for_scheme(scheme: str, context: CheckContext) -> ssl.SSLContext
     return ssl.create_default_context(cafile=context.ca_bundle)
 
 
-def fetch_url_for_absolute_url(url: str, context: CheckContext) -> HttpResponse:
+def fetch_url_for_absolute_url(
+    url: str,
+    context: CheckContext,
+    body_limit_bytes: int | None = None,
+) -> HttpResponse:
     request = urllib.request.Request(
         url,
         headers={
@@ -167,6 +185,7 @@ def fetch_url_for_absolute_url(url: str, context: CheckContext) -> HttpResponse:
         },
         method="GET",
     )
+    setattr(request, "_asm_body_limit_bytes", body_limit_bytes or context.body_limit_bytes)
     scheme = urllib.parse.urlparse(url).scheme.lower()
     fetcher = context.fetcher or fetch_url
     return fetcher(request, context.timeout_seconds, ssl_context_for_scheme(scheme, context))
@@ -320,10 +339,11 @@ def non_standard_port_content_findings(
             continue
         probe_result = http_probe_result(probe_errors, scheme, response.status)
         return (
-            content_findings_for_response(
+            response_content_findings(
                 endpoint,
                 response,
                 context,
+                f"Non-standard port {endpoint.get('port')} {scheme.upper()} redirect",
                 detail_overrides={
                     "non_standard_port": endpoint.get("port"),
                     "probe_scheme": scheme,
@@ -391,14 +411,28 @@ class HttpRedirectChecker:
         ]
 
 
+def response_content_findings(
+    endpoint: dict[str, Any],
+    response: HttpResponse,
+    context: CheckContext,
+    redirect_label: str,
+    detail_overrides: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    if response.status in REDIRECT_STATUSES:
+        return redirected_response_findings(endpoint, response, context, redirect_label, detail_overrides)
+    return content_findings_for_response(endpoint, response, context, detail_overrides=detail_overrides)
+
+
 def redirected_response_findings(
     endpoint: dict[str, Any],
     response: HttpResponse,
     context: CheckContext,
     label: str,
+    detail_overrides: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     resolution = follow_redirects(response, context)
-    detail_overrides = {
+    redirect_details = {
+        **(detail_overrides or {}),
         "initial_status": response.status,
         "initial_location": header_value(response.headers, "Location"),
         "redirect_chain": resolution.redirect_chain,
@@ -411,7 +445,7 @@ def redirected_response_findings(
                 "medium",
                 f"{label} could not be fully analyzed: {resolution.error}",
                 "Investigate the redirect chain and verify the final target does not expose sensitive data.",
-                details=detail_overrides,
+                details=redirect_details,
             )
         ]
 
@@ -419,7 +453,7 @@ def redirected_response_findings(
         endpoint,
         resolution.final_response,
         context,
-        detail_overrides={**detail_overrides, "final_url": resolution.final_response.url},
+        detail_overrides={**redirect_details, "final_url": resolution.final_response.url},
     )
 
 
@@ -429,7 +463,7 @@ def content_findings_for_response(
     context: CheckContext,
     detail_overrides: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    summary = summarize_response(response)
+    summary = summarize_response(response, context)
     endpoint_id = str(endpoint.get("id", ""))
     if endpoint_id:
         context.response_summaries[endpoint_id] = summary
@@ -467,7 +501,7 @@ def content_findings_for_response(
             )
         ]
 
-    signals = detect_sensitive_signals(summary["body_text"])
+    signals = detect_sensitive_signals(response_detection_text(summary))
     if signals:
         return [
             finding(
@@ -539,7 +573,7 @@ class HttpsContentChecker:
             raise
         if response.status in REDIRECT_STATUSES:
             return redirected_response_findings(endpoint, response, context, "HTTPS redirect")
-        return content_findings_for_response(endpoint, response, context)
+        return response_content_findings(endpoint, response, context, "HTTPS redirect")
 
 
 class LlmSensitiveContentChecker:
@@ -834,9 +868,9 @@ def fetch_endpoint(endpoint: dict[str, Any], scheme: str, context: CheckContext)
     return fetch_url_for_absolute_url(f"{scheme}://{host}:{port}/", context)
 
 
-def summarize_response(response: HttpResponse) -> dict[str, Any]:
+def summarize_response(response: HttpResponse, context: CheckContext | None = None) -> dict[str, Any]:
     body_text = decode_body(response.body)
-    return {
+    summary: dict[str, Any] = {
         "url": response.url,
         "status": response.status,
         "headers": response.headers,
@@ -844,10 +878,126 @@ def summarize_response(response: HttpResponse) -> dict[str, Any]:
         "title": extract_title(response.body),
         "body_text": body_text[:DEFAULT_LLM_BODY_LIMIT_CHARS],
     }
+    if context is not None:
+        javascript_assets, javascript_asset_errors = summarize_javascript_assets(response, body_text, context)
+        if javascript_assets:
+            summary["javascript_assets"] = javascript_assets
+        if javascript_asset_errors:
+            summary["javascript_asset_errors"] = javascript_asset_errors
+    return summary
 
 
 def summary_without_body(summary: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in summary.items() if key != "body_text"}
+    result = {key: value for key, value in summary.items() if key != "body_text"}
+    javascript_assets = result.get("javascript_assets")
+    if isinstance(javascript_assets, list):
+        result["javascript_assets"] = [
+            {key: value for key, value in asset.items() if key != "body_text"}
+            for asset in javascript_assets
+            if isinstance(asset, dict)
+        ]
+    return result
+
+
+def summarize_javascript_assets(
+    response: HttpResponse,
+    body_text: str,
+    context: CheckContext,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not is_html_response(response, body_text):
+        return [], []
+
+    assets = []
+    errors = []
+    for url in javascript_asset_urls(body_text, response.url):
+        try:
+            asset_response = fetch_url_for_absolute_url(url, context, body_limit_bytes=DEFAULT_JS_ASSET_LIMIT_BYTES)
+        except (urllib.error.URLError, ValueError, http.client.HTTPException, OSError, ConnectionResetError) as exc:
+            errors.append({"url": url, "error": redirect_fetch_error_reason(exc)})
+            continue
+
+        asset_body_text = decode_body(asset_response.body)
+        content_type = asset_response.headers.get("Content-Type") or asset_response.headers.get("content-type")
+        assets.append(
+            {
+                "url": asset_response.url,
+                "status": asset_response.status,
+                "content_type": content_type,
+                "body_text": asset_body_text[:DEFAULT_LLM_BODY_LIMIT_CHARS],
+                "sensitive_snippets": sensitive_snippets(asset_body_text),
+            }
+        )
+    return assets, errors
+
+
+def is_html_response(response: HttpResponse, body_text: str) -> bool:
+    content_type = response.headers.get("Content-Type") or response.headers.get("content-type") or ""
+    return "html" in content_type.lower() or bool(re.search(r"(?is)<html\b|<script\b", body_text[:2048]))
+
+
+def javascript_asset_urls(body_text: str, base_url: str) -> list[str]:
+    base = urllib.parse.urlparse(base_url)
+    urls: list[str] = []
+    seen: set[str] = set()
+    script_src_pattern = re.compile(
+        r"""<script\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))""",
+        flags=re.IGNORECASE,
+    )
+    for match in script_src_pattern.finditer(body_text):
+        src = html.unescape(next(group for group in match.groups() if group is not None)).strip()
+        if not src:
+            continue
+        resolved = urllib.parse.urljoin(base_url, src)
+        parsed = urllib.parse.urlparse(resolved)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            continue
+        if (parsed.scheme.lower(), parsed.netloc.lower()) != (base.scheme.lower(), base.netloc.lower()):
+            continue
+        if not parsed.path.lower().endswith(".js"):
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        urls.append(resolved)
+        if len(urls) >= MAX_JAVASCRIPT_ASSETS:
+            break
+    return urls
+
+
+def sensitive_snippets(body_text: str, max_snippets: int = 5, context_chars: int = 120) -> list[str]:
+    patterns = [
+        r"(?i)(?:enter (?:account|user(?:name)?|password)[^`'\"\n\r]{0,80}use admin for first use)",
+        r"(?i)(?:use admin for first use)",
+        r"(?i)(?:首次使用请输入\s*admin)",
+        r"(?i)(?:admin\s*/\s*admin)",
+        r"(?i)(api[_-]?key|secret|access[_-]?token|private[_-]?key)\s*[:=]\s*['\"]?[a-z0-9_\-/.+=]{8,}",
+        r"(?i)\bbackup\.(?:zip|tar|tgz|gz|sql)\b",
+        r"(?i)traceback \(most recent call last\)|stack trace",
+        r"(?i)index of /",
+    ]
+    snippets = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, body_text):
+            snippet = " ".join(body_text[max(0, match.start() - context_chars) : match.end() + context_chars].split())
+            if snippet and snippet not in snippets:
+                snippets.append(snippet)
+            if len(snippets) >= max_snippets:
+                return snippets
+    return snippets
+
+
+def response_detection_text(summary: dict[str, Any]) -> str:
+    parts = [str(summary.get("body_text") or "")]
+    javascript_assets = summary.get("javascript_assets")
+    if isinstance(javascript_assets, list):
+        for asset in javascript_assets:
+            if not isinstance(asset, dict):
+                continue
+            parts.append(str(asset.get("body_text") or ""))
+            snippets = asset.get("sensitive_snippets")
+            if isinstance(snippets, list):
+                parts.extend(str(snippet) for snippet in snippets)
+    return "\n".join(part for part in parts if part)
 
 
 def detect_ca_bundle() -> str | None:
@@ -886,6 +1036,11 @@ def detect_sensitive_signals(body_text: str) -> list[str]:
     signals = []
     if "index of /" in lowered:
         signals.append("directory_listing")
+    if re.search(
+        r"(?i)(use admin for first use|首次使用请输入\s*admin|admin\s*/\s*admin)",
+        body_text,
+    ):
+        signals.append("default_admin_credential")
     if re.search(r"(?i)(api[_-]?key|secret|access[_-]?token|private[_-]?key)\s*[:=]\s*['\"]?[a-z0-9_\-/.+=]{8,}", body_text):
         signals.append("secret_like_value")
     if "traceback (most recent call last)" in lowered or "stack trace" in lowered:
