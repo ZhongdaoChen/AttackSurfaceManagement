@@ -632,7 +632,7 @@ class LlmSensitiveContentChecker:
         prompt = build_llm_prompt(endpoint, summary)
         result = context.llm_client(prompt)
         llm_risk_level = normalize_risk(result.get("risk_level"))
-        risk_level = higher_risk(llm_risk_level, summary.get("local_risk_floor"))
+        risk_level = llm_risk_level
         return [
             finding(
                 endpoint,
@@ -1285,10 +1285,11 @@ def build_llm_prompt(endpoint: dict[str, Any], summary: dict[str, Any]) -> str:
     return (
         "Assess whether this internet-facing application endpoint response directly leaks potentially sensitive "
         "content. The response summary may include HTML, directly referenced same-origin JavaScript assets, "
-        "safely probed same-origin API endpoints, local_signals, and local_risk_floor. Treat local_risk_floor "
-        "as the minimum risk level supported by deterministic evidence; do not return a lower risk unless you "
-        "explicitly explain why the deterministic evidence is not applicable. If it is only a normal user login "
-        "page, mark risk_level as low. If it is an administrative login page, mark risk_level as medium unless "
+        "safely probed same-origin API endpoints, local_signals, and local_risk_floor. Treat local_signals and "
+        "local_risk_floor as deterministic hints, not a mandatory minimum. You may return a lower risk than "
+        "local_risk_floor when the context shows the local signal is not actually sensitive, but explain why in "
+        "why_not_higher. If it is only a normal user login page, mark risk_level as low. If it is an "
+        "administrative login page, mark risk_level as medium unless "
         "default credentials, secrets, or sensitive data are present. Do NOT classify public OAuth/OIDC/SAML "
         "client-side configuration as a secret or high-risk sensitive data by itself. Examples that are NOT "
         "secrets when shown alone include: clientId, tenantId, authority/issuer URL, redirectUri, "

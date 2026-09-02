@@ -926,7 +926,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["details"]["javascript_assets"][0]["url"], "http://app.example.com:8080/assets/index.js")
         self.assertIn("Use admin for first use", findings[0]["details"]["javascript_assets"][0]["sensitive_snippets"][0])
 
-    def test_llm_low_risk_is_raised_to_local_high_floor_for_default_admin_credentials(self):
+    def test_llm_risk_level_is_used_even_when_local_floor_is_higher(self):
         captured = {}
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 8080, "protocols": ["HTTP"]}
         response = asm.HttpResponse(
@@ -962,7 +962,7 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         findings = asm.LlmSensitiveContentChecker().check(endpoint, context)
 
         self.assertEqual(content_findings, [])
-        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(findings[0]["details"]["llm_risk_level"], "low")
         self.assertEqual(findings[0]["details"]["local_risk_floor"], "high")
         self.assertIn("default_admin_credential", findings[0]["details"]["local_signals"])
