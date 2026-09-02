@@ -32,6 +32,14 @@ class DashboardAppTests(unittest.TestCase):
         self.assertIn("open_finding_whitelist_dialog", body)
         self.assertIn("open_whitelist_dialog", body)
 
+    def test_current_row_whitelist_actions_use_compact_columns(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def render_finding_row")
+        end = source.index("\n\ndef render_finding_table", start)
+        body = source[start:end]
+
+        self.assertIn("finding_col, endpoint_col, _spacer_col = st.columns([1.1, 1.35, 6.5])", body)
+
     def test_finding_whitelist_dialog_calls_finding_rule_api_and_explains_scope(self):
         source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
         start = source.index("def open_finding_whitelist_dialog")

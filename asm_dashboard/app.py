@@ -577,7 +577,7 @@ def render_finding_row(connection, row: dict[str, Any], page_key: str, index: in
         st.markdown("---")
         st.json(row, expanded=ROW_DETAIL_JSON_EXPANDED)
         if allow_whitelist:
-            finding_col, endpoint_col = st.columns(2)
+            finding_col, endpoint_col, _spacer_col = st.columns([1.1, 1.35, 6.5])
             if finding_col.button(
                 "Whitelist this finding",
                 key=f"open_finding_whitelist_{page_key}_{model['identity']}",
