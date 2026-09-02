@@ -119,7 +119,7 @@ pip3 install -r requirements.txt
 streamlit run asm_dashboard/app.py
 ```
 
-默认页面是 Current Status，只展示 active 且非 whitelisted 的 current findings。Historical Results 在侧边栏中按扫描日期查看历史结果，并包含 whitelisted 记录。Whitelist Rules 展示 dashboard 创建的 `endpoint_name + port` 白名单规则并支持停用；停用只影响未来扫描，不回滚已经标记为 whitelisted 的 findings。
+默认页面是 Current Status，只展示 active 且非 whitelisted 的 current findings。Historical Results 在侧边栏中按扫描日期查看历史结果，并包含 whitelisted 记录。Current Status 展开单条 finding 后可以选择 `Whitelist this finding`（只对白名单中的 `finding_key = endpoint_id + check_id + host + port` 生效）或 `Whitelist endpoint + port`（对相同 endpoint name 和 port 生效）。Whitelist Rules 分开展示 finding 级规则和 endpoint/port 规则，并支持停用；停用只影响未来扫描，不回滚已经标记为 whitelisted 的 findings。
 
 ## 常用命令
 
