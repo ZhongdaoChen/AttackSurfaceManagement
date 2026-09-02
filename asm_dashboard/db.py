@@ -248,25 +248,19 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           ) rule_scan ON TRUE
           GROUP BY r.endpoint_name, COALESCE(r.port, -1)
         ),
-        active_high_counts AS (
+        finding_rule_effective AS (
           SELECT
-            s.scan_id,
-            COUNT(*) AS active_high_count
-          FROM trend_scans s
-          JOIN asm_findings active_f ON active_f.scan_id = s.scan_id
-          LEFT JOIN rule_effective active_r
-            ON active_r.endpoint_name = active_f.endpoint_name
-           AND active_r.rule_port = COALESCE(active_f.port, -1)
-          WHERE active_f.risk_level = 'high'
-            AND (
-              active_f.whitelisted = FALSE
-              OR (
-                active_f.whitelisted = TRUE
-                AND active_r.whitelist_effective_at IS NOT NULL
-                AND active_r.whitelist_effective_at > s.started_at
-              )
-            )
-          GROUP BY s.scan_id
+            frule.finding_key,
+            MIN(rule_scan.started_at) AS whitelist_effective_at
+          FROM asm_finding_whitelist_rules frule
+          JOIN LATERAL (
+            SELECT s.started_at
+            FROM asm_scans s
+            WHERE s.started_at <= frule.created_at
+            ORDER BY s.started_at DESC, s.scan_id DESC
+            LIMIT 1
+          ) rule_scan ON TRUE
+          GROUP BY frule.finding_key
         ),
         dashboard_whitelist_effective AS (
           SELECT
@@ -276,6 +270,15 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           JOIN rule_effective active_r
             ON active_r.endpoint_name = c.endpoint_name
            AND active_r.rule_port = COALESCE(c.port, -1)
+          WHERE c.whitelisted = TRUE
+        ),
+        finding_whitelist_effective AS (
+          SELECT
+            c.finding_key,
+            frule_effective.whitelist_effective_at
+          FROM asm_current_findings c
+          JOIN finding_rule_effective frule_effective
+            ON frule_effective.finding_key = c.finding_key
           WHERE c.whitelisted = TRUE
         ),
         historical_whitelist_effective AS (
@@ -293,8 +296,13 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           LEFT JOIN rule_effective fr
             ON fr.endpoint_name = f.endpoint_name
            AND fr.rule_port = COALESCE(f.port, -1)
-          WHERE (fr.whitelist_effective_at IS NULL
-             OR (c.whitelisted = TRUE AND ws.started_at >= fr.whitelist_effective_at))
+          LEFT JOIN finding_rule_effective ffr
+            ON ffr.finding_key = c.finding_key
+          WHERE (
+            (fr.whitelist_effective_at IS NULL AND ffr.whitelist_effective_at IS NULL)
+            OR (fr.whitelist_effective_at IS NOT NULL AND ws.started_at >= fr.whitelist_effective_at)
+            OR (ffr.whitelist_effective_at IS NOT NULL AND ws.started_at >= ffr.whitelist_effective_at)
+          )
           GROUP BY c.finding_key
         ),
         resolved_whitelist_effective AS (
@@ -309,11 +317,37 @@ def fetch_trend_rows(connection) -> list[dict[str, Any]]:
           FROM (
             SELECT finding_key, whitelist_effective_at FROM dashboard_whitelist_effective
             UNION ALL
+            SELECT finding_key, whitelist_effective_at FROM finding_whitelist_effective
+            UNION ALL
             SELECT finding_key, whitelist_effective_at FROM resolved_whitelist_effective
             UNION ALL
             SELECT finding_key, whitelist_effective_at FROM historical_whitelist_effective
           ) combined
           GROUP BY finding_key
+        ),
+        active_high_counts AS (
+          SELECT
+            s.scan_id,
+            COUNT(*) AS active_high_count
+          FROM trend_scans s
+          JOIN asm_findings active_f ON active_f.scan_id = s.scan_id
+          LEFT JOIN asm_current_findings active_c
+            ON COALESCE(active_c.endpoint_id, '') = COALESCE(active_f.endpoint_id, '')
+           AND COALESCE(active_c.check_id, '') = COALESCE(active_f.check_id, '')
+           AND COALESCE(active_c.host, '') = COALESCE(active_f.host, '')
+           AND COALESCE(active_c.port, -1) = COALESCE(active_f.port, -1)
+          LEFT JOIN whitelist_effective active_w
+            ON active_w.finding_key = active_c.finding_key
+          WHERE active_f.risk_level = 'high'
+            AND (
+              active_f.whitelisted = FALSE
+              OR (
+                active_f.whitelisted = TRUE
+                AND active_w.whitelist_effective_at IS NOT NULL
+                AND active_w.whitelist_effective_at > s.started_at
+              )
+            )
+          GROUP BY s.scan_id
         ),
         mitigated_counts AS (
           SELECT

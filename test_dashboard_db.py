@@ -127,7 +127,7 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("active_f.risk_level = 'high'", sql)
         self.assertIn("active_f.whitelisted = FALSE", sql)
         self.assertIn("active_f.whitelisted = TRUE", sql)
-        self.assertIn("active_r.whitelist_effective_at > s.started_at", sql)
+        self.assertIn("active_w.whitelist_effective_at > s.started_at", sql)
         self.assertIn("c.first_seen_at <= s.started_at", sql)
         self.assertIn("c.risk_level = 'high'", sql)
         self.assertIn("c.resolved_at <= s.started_at", sql)
@@ -143,11 +143,19 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("JOIN asm_findings f", sql)
         self.assertIn("f.whitelisted = TRUE", sql)
         self.assertIn(
-            "(fr.whitelist_effective_at IS NULL OR (c.whitelisted = TRUE AND ws.started_at >= fr.whitelist_effective_at))",
+            "(fr.whitelist_effective_at IS NULL AND ffr.whitelist_effective_at IS NULL)",
             normalized_sql,
         )
+        self.assertIn("ws.started_at >= fr.whitelist_effective_at", sql)
+        self.assertIn("ws.started_at >= ffr.whitelist_effective_at", sql)
         self.assertIn("resolved_whitelist_effective", sql)
         self.assertIn("JOIN asm_scans rs ON rs.scan_id = c.resolved_scan_id", sql)
+        self.assertIn("finding_rule_effective", sql)
+        self.assertIn("asm_finding_whitelist_rules frule", sql)
+        self.assertIn("frule.finding_key", sql)
+        self.assertIn("finding_whitelist_effective", sql)
+        self.assertIn("JOIN finding_rule_effective frule_effective", sql)
+        self.assertIn("active_w.whitelist_effective_at > s.started_at", sql)
         self.assertIn("whitelist_effective", sql)
         self.assertIn("MIN(whitelist_effective_at)", sql)
         # Final join coalesces missing counts to zero.
