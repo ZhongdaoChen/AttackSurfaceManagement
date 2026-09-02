@@ -460,14 +460,15 @@ def expand_icon(expanded: bool) -> str:
 
 
 def open_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> None:
-    @st.dialog("Add to whitelist")
+    @st.dialog("Whitelist endpoint + port")
     def whitelist_dialog() -> None:
         st.write(f"Endpoint: `{row.get('endpoint_name')}`")
         st.write(f"Port: `{row.get('port')}`")
+        st.caption("This rule applies to future findings with the same endpoint name and port.")
         with st.form(dialog_key):
             reason = st.text_area("Reason")
             operator_name = st.text_input("Operator Name")
-            submitted = st.form_submit_button("Confirm whitelist")
+            submitted = st.form_submit_button("Confirm endpoint + port whitelist")
         if submitted:
             try:
                 db.create_whitelist_rule(
@@ -480,10 +481,43 @@ def open_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> N
             except Exception as exc:
                 st.error(f"Whitelist failed: {type(exc).__name__}: {exc}")
             else:
-                st.success("Whitelist rule created and matching current/history findings updated.")
+                st.success("Endpoint + port whitelist rule created and matching current/history findings updated.")
                 st.rerun()
 
     whitelist_dialog()
+
+
+def open_finding_whitelist_dialog(connection, row: dict[str, Any], dialog_key: str) -> None:
+    @st.dialog("Whitelist this finding")
+    def finding_whitelist_dialog() -> None:
+        st.write(f"Finding key: `{row.get('finding_key')}`")
+        st.write(f"Endpoint: `{row.get('endpoint_name')}`")
+        st.write(f"Host: `{row.get('host')}`")
+        st.write(f"Port: `{row.get('port')}`")
+        st.write(f"Check: `{row.get('check_id')}`")
+        st.caption(
+            "This rule does not whitelist the cloud account, does not whitelist other findings on the same endpoint, "
+            "and does not whitelist other checks, hosts, or ports."
+        )
+        with st.form(dialog_key):
+            reason = st.text_area("Reason")
+            operator_name = st.text_input("Operator Name")
+            submitted = st.form_submit_button("Confirm finding whitelist")
+        if submitted:
+            try:
+                db.create_finding_whitelist_rule(
+                    connection,
+                    row=row,
+                    reason=reason,
+                    operator_name=operator_name,
+                )
+            except Exception as exc:
+                st.error(f"Finding whitelist failed: {type(exc).__name__}: {exc}")
+            else:
+                st.success("Finding whitelist rule created and only this specific finding was updated.")
+                st.rerun()
+
+    finding_whitelist_dialog()
 
 
 def render_link(label: str, url: str) -> None:
@@ -542,8 +576,18 @@ def render_finding_row(connection, row: dict[str, Any], page_key: str, index: in
     if st.session_state.get(model["expanded_state_key"]) == model["identity"]:
         st.markdown("---")
         st.json(row, expanded=ROW_DETAIL_JSON_EXPANDED)
-        if allow_whitelist and st.button("Whitelist", key=f"open_whitelist_{page_key}_{model['identity']}"):
-            open_whitelist_dialog(connection, row, f"whitelist_{page_key}_{model['identity']}")
+        if allow_whitelist:
+            finding_col, endpoint_col = st.columns(2)
+            if finding_col.button(
+                "Whitelist this finding",
+                key=f"open_finding_whitelist_{page_key}_{model['identity']}",
+            ):
+                open_finding_whitelist_dialog(connection, row, f"finding_whitelist_{page_key}_{model['identity']}")
+            if endpoint_col.button(
+                "Whitelist endpoint + port",
+                key=f"open_endpoint_whitelist_{page_key}_{model['identity']}",
+            ):
+                open_whitelist_dialog(connection, row, f"endpoint_whitelist_{page_key}_{model['identity']}")
 
 
 def render_finding_table(connection, result: db.PageResult, page_key: str, allow_whitelist: bool) -> None:
@@ -626,12 +670,74 @@ def historical_results_page(connection) -> None:
     render_page_controls(result.total, "history_page")
 
 
-def whitelist_rules_page(connection) -> None:
-    st.title("Whitelist Rules")
-    st.caption("Dashboard-managed endpoint_name + port whitelist rules.")
+def render_finding_whitelist_rules(connection) -> None:
+    rules = db.fetch_finding_whitelist_rules(connection)
+    if not rules:
+        st.info("No finding whitelist rules have been created.")
+        return
+    header = st.columns([0.8, 2.2, 2.4, 1.6, 0.8, 1.4, 1.6, 1.0, 2.0, 1.4, 1.4])
+    titles = [
+        "Details",
+        "Finding Key",
+        "Endpoint Name",
+        "Host",
+        "Port",
+        "Check ID",
+        "Cloud Account",
+        "Active",
+        "Reason",
+        "Operator Name",
+        "Created At",
+    ]
+    for column, title in zip(header, titles, strict=True):
+        column.markdown(f"**{title}**")
+    for index, rule in enumerate(rules, start=1):
+        identity = str(rule.get("id") or index)
+        expanded_key = "expanded_finding_whitelist_rule"
+        columns = st.columns([0.8, 2.2, 2.4, 1.6, 0.8, 1.4, 1.6, 1.0, 2.0, 1.4, 1.4])
+        is_expanded = st.session_state.get(expanded_key) == identity
+        if columns[0].button(expand_icon(is_expanded), key=f"expand_finding_whitelist_rule_{identity}"):
+            st.session_state[expanded_key] = None if is_expanded else identity
+            st.rerun()
+        columns[1].write(rule.get("finding_key") or "")
+        columns[2].write(rule.get("endpoint_name") or "")
+        columns[3].write(rule.get("host") or "")
+        columns[4].write(rule.get("port") or "")
+        columns[5].write(rule.get("check_id") or "")
+        columns[6].write(rule.get("cloud_account_name") or "")
+        columns[7].write("Yes" if rule.get("active") else "No")
+        columns[8].write(rule.get("reason") or "")
+        columns[9].write(rule.get("operator_name") or "")
+        columns[10].write(display_date_only(rule.get("created_at")))
+        if st.session_state.get(expanded_key) != identity:
+            continue
+        st.json(rule, expanded=ROW_DETAIL_JSON_EXPANDED)
+        if not rule.get("active"):
+            st.info("This finding rule is already inactive.")
+            continue
+        with st.form(f"deactivate_finding_rule_{identity}"):
+            operator_name = st.text_input("Operator name")
+            reason = st.text_area("Deactivation reason")
+            submitted = st.form_submit_button("Deactivate finding rule")
+        if submitted:
+            try:
+                db.deactivate_finding_whitelist_rule(
+                    connection,
+                    rule_id=int(rule["id"]),
+                    operator_name=operator_name,
+                    reason=reason,
+                )
+            except Exception as exc:
+                st.error(f"Deactivate failed: {type(exc).__name__}: {exc}")
+            else:
+                st.success("Finding whitelist rule deactivated. Existing whitelisted findings were not reverted.")
+                st.rerun()
+
+
+def render_endpoint_whitelist_rules(connection) -> None:
     rules = db.fetch_whitelist_rules(connection)
     if not rules:
-        st.info("No whitelist rules have been created.")
+        st.info("No endpoint/port whitelist rules have been created.")
         return
     header = st.columns([0.8, 2.8, 0.8, 1.0, 2.4, 1.5, 1.5])
     for column, title in zip(
@@ -663,7 +769,7 @@ def whitelist_rules_page(connection) -> None:
         with st.form(f"deactivate_rule_{identity}"):
             operator_name = st.text_input("Operator name")
             reason = st.text_area("Deactivation reason")
-            submitted = st.form_submit_button("Deactivate rule")
+            submitted = st.form_submit_button("Deactivate endpoint + port rule")
         if submitted:
             try:
                 db.deactivate_whitelist_rule(
@@ -675,8 +781,18 @@ def whitelist_rules_page(connection) -> None:
             except Exception as exc:
                 st.error(f"Deactivate failed: {type(exc).__name__}: {exc}")
             else:
-                st.success("Whitelist rule deactivated. Existing whitelisted findings were not reverted.")
+                st.success("Endpoint + port whitelist rule deactivated. Existing whitelisted findings were not reverted.")
                 st.rerun()
+
+
+def whitelist_rules_page(connection) -> None:
+    st.title("Whitelist Rules")
+    st.caption("Manage finding-level rules separately from endpoint/port whitelist rules.")
+    finding_tab, endpoint_tab = st.tabs(["Finding Whitelist Rules", "Endpoint/Port Whitelist Rules"])
+    with finding_tab:
+        render_finding_whitelist_rules(connection)
+    with endpoint_tab:
+        render_endpoint_whitelist_rules(connection)
 
 
 def main() -> None:

@@ -21,6 +21,43 @@ class DashboardAppTests(unittest.TestCase):
 
         self.assertNotIn("st.dataframe", body)
 
+    def test_current_row_exposes_distinct_finding_and_endpoint_whitelist_actions(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def render_finding_row")
+        end = source.index("\n\ndef render_finding_table", start)
+        body = source[start:end]
+
+        self.assertIn("Whitelist this finding", body)
+        self.assertIn("Whitelist endpoint + port", body)
+        self.assertIn("open_finding_whitelist_dialog", body)
+        self.assertIn("open_whitelist_dialog", body)
+
+    def test_finding_whitelist_dialog_calls_finding_rule_api_and_explains_scope(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def open_finding_whitelist_dialog")
+        end = source.index("\n\ndef render_link", start)
+        body = source[start:end]
+
+        self.assertIn("Whitelist this finding", body)
+        self.assertIn("does not whitelist the cloud account", body)
+        self.assertIn("does not whitelist other findings on the same endpoint", body)
+        self.assertIn("db.create_finding_whitelist_rule", body)
+
+    def test_whitelist_rules_page_separates_finding_and_endpoint_rules(self):
+        source = Path("asm_dashboard/app.py").read_text(encoding="utf-8")
+        start = source.index("def whitelist_rules_page")
+        end = source.index("\n\ndef main", start)
+        body = source[start:end]
+
+        self.assertIn("Finding Whitelist Rules", body)
+        self.assertIn("Endpoint/Port Whitelist Rules", body)
+        self.assertIn("render_finding_whitelist_rules", body)
+        self.assertIn("render_endpoint_whitelist_rules", body)
+        self.assertIn("db.fetch_finding_whitelist_rules", source)
+        self.assertIn("db.fetch_whitelist_rules", source)
+        self.assertIn("db.deactivate_finding_whitelist_rule", source)
+        self.assertIn("db.deactivate_whitelist_rule", source)
+
     def test_table_records_include_expand_raw_endpoint_and_link_urls(self):
         import asm_dashboard.app as app
 
