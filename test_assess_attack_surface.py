@@ -1660,6 +1660,37 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertIn("If sensitive content is present, evidence should include the relevant HTTP/HTML/JavaScript/API response snippet", prompt)
         self.assertIn("category, confidence (0-10 integer), reason, evidence", prompt)
 
+    def test_build_llm_prompt_excludes_public_oauth_metadata_and_field_names_from_high_risk(self):
+        prompt = asm.build_llm_prompt(
+            {"id": "endpoint-1", "name": "https://ars.adidas.com.cn:443"},
+            {
+                "url": "https://ars.adidas.com.cn/",
+                "status": 200,
+                "headers": {"Content-Type": "text/html"},
+                "body_text": "<script src='/app.1763653055816.js'></script>",
+                "javascript_assets": [
+                    {
+                        "url": "https://ars.adidas.com.cn/app.1763653055816.js",
+                        "status": 200,
+                        "content_type": "application/javascript",
+                        "body_text": (
+                            'auth:{clientId:"c46c954f-b162-4f55-b8e1-8269645e3f3b",'
+                            'authority:"https://login.microsoftonline.com/3bfeb222-e42c-4535-aace-ea6f7751369b",'
+                            'redirectUri:"https://ars.adidas.com.cn/login"};'
+                            '"apiKey" should not be defined; Ce.apiKey;'
+                        ),
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Do NOT classify public OAuth/OIDC/SAML client-side configuration as a secret", prompt)
+        self.assertIn("clientId, tenantId, authority/issuer URL, redirectUri, postLogoutRedirectUri", prompt)
+        self.assertIn("Do NOT treat variable names, property names, TypeScript/interface names", prompt)
+        self.assertIn('"apiKey" should not be defined', prompt)
+        self.assertIn("clientId values are expected to be public", prompt)
+        self.assertIn("Only classify authentication material as high risk when an actual credential or bearer secret is exposed", prompt)
+
     def test_arg_parser_defaults_to_full_scan_operational_settings(self):
         args = asm.build_arg_parser().parse_args([])
 
