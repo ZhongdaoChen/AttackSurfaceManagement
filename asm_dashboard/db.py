@@ -420,6 +420,72 @@ def create_whitelist_rule(connection, endpoint_name: str, port: int | None, reas
     connection.commit()
 
 
+def create_finding_whitelist_rule(connection, row: dict[str, Any], reason: str, operator_name: str) -> None:
+    finding_key = str(row.get("finding_key") or "").strip()
+    clean_reason = reason.strip()
+    clean_operator = operator_name.strip()
+    if not finding_key:
+        raise ValueError("finding_key is required")
+    if not clean_reason:
+        raise ValueError("reason is required")
+    if not clean_operator:
+        raise ValueError("operator_name is required")
+    params = {
+        "finding_key": finding_key,
+        "endpoint_id": row.get("endpoint_id"),
+        "endpoint_name": row.get("endpoint_name"),
+        "host": row.get("host"),
+        "port": row.get("port"),
+        "check_id": row.get("check_id"),
+        "cloud_account_name": row.get("cloud_account_name"),
+        "reason": clean_reason,
+        "operator_name": clean_operator,
+    }
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        INSERT INTO asm_finding_whitelist_rules (
+          finding_key, endpoint_name, host, port, check_id,
+          cloud_account_name, reason, operator_name
+        )
+        VALUES (
+          %(finding_key)s, %(endpoint_name)s, %(host)s, %(port)s, %(check_id)s,
+          %(cloud_account_name)s, %(reason)s, %(operator_name)s
+        )
+        """,
+        params,
+    )
+    cursor.execute(
+        """
+        WITH latest_scan AS (
+          SELECT scan_id
+          FROM asm_scans
+          ORDER BY started_at DESC, scan_id DESC
+          LIMIT 1
+        )
+        UPDATE asm_current_findings
+        SET whitelisted = TRUE,
+            resolved_at = now(),
+            resolved_scan_id = (SELECT scan_id FROM latest_scan),
+            updated_at = now()
+        WHERE finding_key = %(finding_key)s
+        """,
+        params,
+    )
+    cursor.execute(
+        """
+        UPDATE asm_findings
+        SET whitelisted = TRUE
+        WHERE COALESCE(endpoint_id, '') = COALESCE(%(endpoint_id)s, '')
+          AND COALESCE(check_id, '') = COALESCE(%(check_id)s, '')
+          AND COALESCE(host, '') = COALESCE(%(host)s, '')
+          AND COALESCE(port, -1) = COALESCE(%(port)s, -1)
+        """,
+        params,
+    )
+    connection.commit()
+
+
 def fetch_whitelist_rules(connection) -> list[dict[str, Any]]:
     cursor = connection.cursor()
     cursor.execute(
@@ -427,6 +493,21 @@ def fetch_whitelist_rules(connection) -> list[dict[str, Any]]:
         SELECT id, endpoint_name, port, reason, operator_name, active,
                created_at, deactivated_at, deactivated_by, deactivation_reason
         FROM asm_whitelist_rules
+        ORDER BY active DESC, created_at DESC, id DESC
+        """,
+        {},
+    )
+    return _fetch_all(cursor)
+
+
+def fetch_finding_whitelist_rules(connection) -> list[dict[str, Any]]:
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT id, finding_key, endpoint_name, host, port, check_id,
+               cloud_account_name, reason, operator_name, active,
+               created_at, deactivated_at, deactivated_by, deactivation_reason
+        FROM asm_finding_whitelist_rules
         ORDER BY active DESC, created_at DESC, id DESC
         """,
         {},
@@ -445,6 +526,29 @@ def deactivate_whitelist_rule(connection, rule_id: int, operator_name: str, reas
     cursor.execute(
         """
         UPDATE asm_whitelist_rules
+        SET active = FALSE,
+            deactivated_at = now(),
+            deactivated_by = %(operator_name)s,
+            deactivation_reason = %(reason)s
+        WHERE id = %(rule_id)s
+          AND active = TRUE
+        """,
+        {"rule_id": rule_id, "operator_name": clean_operator, "reason": clean_reason},
+    )
+    connection.commit()
+
+
+def deactivate_finding_whitelist_rule(connection, rule_id: int, operator_name: str, reason: str) -> None:
+    clean_reason = reason.strip()
+    clean_operator = operator_name.strip()
+    if not clean_reason:
+        raise ValueError("reason is required")
+    if not clean_operator:
+        raise ValueError("operator_name is required")
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        UPDATE asm_finding_whitelist_rules
         SET active = FALSE,
             deactivated_at = now(),
             deactivated_by = %(operator_name)s,

@@ -186,6 +186,70 @@ class DashboardDbTests(unittest.TestCase):
         self.assertIn("UPDATE asm_findings", executed_sql)
         self.assertEqual(connection.commits, 1)
 
+    def test_create_finding_whitelist_rule_inserts_rule_and_backfills_only_selected_finding(self):
+        connection = FakeConnection()
+        row = {
+            "finding_key": "finding-key-1",
+            "endpoint_id": "endpoint-1",
+            "endpoint_name": "https://app.example.com:443",
+            "host": "app.example.com",
+            "port": 443,
+            "check_id": "llm_sensitive_content",
+            "cloud_account_name": "Account One",
+        }
+
+        db.create_finding_whitelist_rule(
+            connection,
+            row=row,
+            reason="Business accepted for this exact finding",
+            operator_name="Alice",
+        )
+
+        executed_sql = "\n".join(sql for sql, _params in connection.cursor_obj.executions)
+        insert_sql, insert_params = connection.cursor_obj.executions[0]
+        current_sql, current_params = connection.cursor_obj.executions[1]
+        history_sql, history_params = connection.cursor_obj.executions[2]
+        self.assertIn("INSERT INTO asm_finding_whitelist_rules", insert_sql)
+        self.assertEqual(insert_params["finding_key"], "finding-key-1")
+        self.assertEqual(insert_params["endpoint_name"], "https://app.example.com:443")
+        self.assertEqual(insert_params["host"], "app.example.com")
+        self.assertEqual(insert_params["port"], 443)
+        self.assertEqual(insert_params["check_id"], "llm_sensitive_content")
+        self.assertEqual(insert_params["cloud_account_name"], "Account One")
+        self.assertIn("UPDATE asm_current_findings", current_sql)
+        self.assertIn("WHERE finding_key = %(finding_key)s", current_sql)
+        self.assertEqual(current_params["finding_key"], "finding-key-1")
+        self.assertIn("UPDATE asm_findings", history_sql)
+        self.assertIn("COALESCE(endpoint_id, '') = COALESCE(%(endpoint_id)s, '')", history_sql)
+        self.assertIn("COALESCE(check_id, '') = COALESCE(%(check_id)s, '')", history_sql)
+        self.assertIn("COALESCE(host, '') = COALESCE(%(host)s, '')", history_sql)
+        self.assertIn("COALESCE(port, -1) = COALESCE(%(port)s, -1)", history_sql)
+        self.assertNotIn("cloud_account_name = %(cloud_account_name)s", executed_sql)
+        self.assertEqual(history_params["endpoint_id"], "endpoint-1")
+        self.assertEqual(history_params["check_id"], "llm_sensitive_content")
+        self.assertEqual(history_params["host"], "app.example.com")
+        self.assertEqual(history_params["port"], 443)
+        self.assertEqual(connection.commits, 1)
+
+    def test_create_finding_whitelist_rule_requires_finding_key_reason_and_operator(self):
+        connection = FakeConnection()
+        valid_row = {
+            "finding_key": "finding-key-1",
+            "endpoint_id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 443,
+            "check_id": "llm_sensitive_content",
+        }
+
+        with self.assertRaisesRegex(ValueError, "finding_key is required"):
+            db.create_finding_whitelist_rule(connection, row={**valid_row, "finding_key": " "}, reason="ok", operator_name="Alice")
+        with self.assertRaisesRegex(ValueError, "reason is required"):
+            db.create_finding_whitelist_rule(connection, row=valid_row, reason=" ", operator_name="Alice")
+        with self.assertRaisesRegex(ValueError, "operator_name is required"):
+            db.create_finding_whitelist_rule(connection, row=valid_row, reason="ok", operator_name=" ")
+        self.assertEqual(connection.cursor_obj.executions, [])
+        self.assertEqual(connection.commits, 0)
+
     def test_fetch_whitelist_rules_orders_active_first(self):
         connection = FakeConnection(rows=[{"id": 1, "active": True}])
 
@@ -197,6 +261,17 @@ class DashboardDbTests(unittest.TestCase):
         self.assertEqual(params, {})
         self.assertEqual(rows, [{"id": 1, "active": True}])
 
+    def test_fetch_finding_whitelist_rules_orders_active_first(self):
+        connection = FakeConnection(rows=[{"id": 1, "finding_key": "finding-key-1", "active": True}])
+
+        rows = db.fetch_finding_whitelist_rules(connection)
+
+        sql, params = connection.cursor_obj.executions[0]
+        self.assertIn("FROM asm_finding_whitelist_rules", sql)
+        self.assertIn("ORDER BY active DESC, created_at DESC, id DESC", sql)
+        self.assertEqual(params, {})
+        self.assertEqual(rows, [{"id": 1, "finding_key": "finding-key-1", "active": True}])
+
     def test_deactivate_whitelist_rule_only_updates_rule_metadata(self):
         connection = FakeConnection()
 
@@ -204,6 +279,17 @@ class DashboardDbTests(unittest.TestCase):
 
         executed_sql = "\n".join(sql for sql, _params in connection.cursor_obj.executions)
         self.assertIn("UPDATE asm_whitelist_rules", executed_sql)
+        self.assertNotIn("UPDATE asm_current_findings", executed_sql)
+        self.assertNotIn("UPDATE asm_findings", executed_sql)
+        self.assertEqual(connection.commits, 1)
+
+    def test_deactivate_finding_whitelist_rule_only_updates_rule_metadata(self):
+        connection = FakeConnection()
+
+        db.deactivate_finding_whitelist_rule(connection, rule_id=7, operator_name="Alice", reason="Expired exception")
+
+        executed_sql = "\n".join(sql for sql, _params in connection.cursor_obj.executions)
+        self.assertIn("UPDATE asm_finding_whitelist_rules", executed_sql)
         self.assertNotIn("UPDATE asm_current_findings", executed_sql)
         self.assertNotIn("UPDATE asm_findings", executed_sql)
         self.assertEqual(connection.commits, 1)
