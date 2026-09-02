@@ -577,7 +577,7 @@ class RdsWriterTests(unittest.TestCase):
         self.assertEqual(connection.commits, 2)
         self.assertTrue(connection.closed)
         scan_sql, scan_params = connection.cursor_obj.executions[0]
-        finding_sql, finding_params = connection.cursor_obj.executions[2]
+        finding_sql, finding_params = execution_containing(connection, "INSERT INTO asm_findings")
         self.assertIn("INSERT INTO asm_scans", scan_sql)
         self.assertEqual(scan_params["scan_id"], "scan-1")
         self.assertIn("INSERT INTO asm_findings", finding_sql)
