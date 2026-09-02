@@ -163,6 +163,23 @@ class RdsWriterTests(unittest.TestCase):
         self.assertIn("deactivated_at TIMESTAMPTZ", schema)
         self.assertIn("idx_asm_whitelist_rules_active_lookup", schema)
 
+    def test_schema_defines_finding_whitelist_rules(self):
+        schema = Path("schema.sql").read_text(encoding="utf-8")
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS asm_finding_whitelist_rules", schema)
+        self.assertIn("finding_key TEXT NOT NULL", schema)
+        self.assertIn("endpoint_name TEXT", schema)
+        self.assertIn("host TEXT", schema)
+        self.assertIn("port INTEGER", schema)
+        self.assertIn("check_id TEXT", schema)
+        self.assertIn("cloud_account_name TEXT", schema)
+        self.assertIn("reason TEXT NOT NULL", schema)
+        self.assertIn("operator_name TEXT NOT NULL", schema)
+        self.assertIn("active BOOLEAN NOT NULL DEFAULT TRUE", schema)
+        self.assertIn("deactivated_at TIMESTAMPTZ", schema)
+        self.assertIn("idx_asm_finding_whitelist_rules_active_lookup", schema)
+        self.assertIn("idx_asm_finding_whitelist_rules_active", schema)
+
     def test_finding_key_normalizes_missing_identity_fields(self):
         params = {
             "endpoint_id": None,

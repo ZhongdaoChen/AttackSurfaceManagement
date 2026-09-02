@@ -161,3 +161,29 @@ CREATE INDEX IF NOT EXISTS idx_asm_whitelist_rules_active_lookup
 
 CREATE INDEX IF NOT EXISTS idx_asm_whitelist_rules_active
   ON asm_whitelist_rules(active);
+
+CREATE TABLE IF NOT EXISTS asm_finding_whitelist_rules (
+  id BIGSERIAL PRIMARY KEY,
+  finding_key TEXT NOT NULL,
+
+  endpoint_name TEXT,
+  host TEXT,
+  port INTEGER,
+  check_id TEXT,
+  cloud_account_name TEXT,
+
+  reason TEXT NOT NULL,
+  operator_name TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deactivated_at TIMESTAMPTZ,
+  deactivated_by TEXT,
+  deactivation_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_asm_finding_whitelist_rules_active_lookup
+  ON asm_finding_whitelist_rules(finding_key)
+  WHERE active = TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_asm_finding_whitelist_rules_active
+  ON asm_finding_whitelist_rules(active);
