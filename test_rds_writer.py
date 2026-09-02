@@ -10,10 +10,11 @@ import rds_writer
 
 
 class FakeCursor:
-    def __init__(self, rowcounts=None, result_rows=None):
+    def __init__(self, rowcounts=None, result_rows=None, fetchone_rows=None):
         self.executions = []
         self.rowcounts = list(rowcounts or [])
         self.result_rows = list(result_rows or [])
+        self.fetchone_rows = list(fetchone_rows or [])
         self.rowcount = 1
 
     def execute(self, sql, params=None):
@@ -24,12 +25,14 @@ class FakeCursor:
         return self.result_rows
 
     def fetchone(self):
+        if self.fetchone_rows:
+            return self.fetchone_rows.pop(0)
         return self.result_rows[0] if self.result_rows else None
 
 
 class FakeConnection:
-    def __init__(self, rowcounts=None, result_rows=None):
-        self.cursor_obj = FakeCursor(rowcounts=rowcounts, result_rows=result_rows)
+    def __init__(self, rowcounts=None, result_rows=None, fetchone_rows=None):
+        self.cursor_obj = FakeCursor(rowcounts=rowcounts, result_rows=result_rows, fetchone_rows=fetchone_rows)
         self.commits = 0
         self.closed = False
 
@@ -41,6 +44,13 @@ class FakeConnection:
 
     def close(self):
         self.closed = True
+
+
+def execution_containing(connection: FakeConnection, text: str):
+    for sql, params in connection.cursor_obj.executions:
+        if text in sql:
+            return sql, params
+    raise AssertionError(f"No SQL execution contained {text!r}")
 
 
 class RdsWriterTests(unittest.TestCase):
@@ -255,6 +265,24 @@ class RdsWriterTests(unittest.TestCase):
         self.assertIn("COALESCE(port, -1) = COALESCE(%(port)s, -1)", sql)
         self.assertEqual(params, {"endpoint_name": "https://app.example.com:443", "port": 443})
 
+    def test_dashboard_finding_whitelisted_queries_active_finding_key_rule(self):
+        cursor = FakeCursor(result_rows=[{"id": 1}])
+
+        self.assertTrue(rds_writer.dashboard_finding_whitelisted(cursor, "finding-key-1"))
+
+        sql, params = cursor.executions[0]
+        self.assertIn("FROM asm_finding_whitelist_rules", sql)
+        self.assertIn("active = TRUE", sql)
+        self.assertIn("finding_key = %(finding_key)s", sql)
+        self.assertEqual(params, {"finding_key": "finding-key-1"})
+
+    def test_dashboard_finding_whitelisted_rejects_blank_key_without_query(self):
+        cursor = FakeCursor(result_rows=[{"id": 1}])
+
+        self.assertFalse(rds_writer.dashboard_finding_whitelisted(cursor, " "))
+
+        self.assertEqual(cursor.executions, [])
+
     def test_writer_marks_future_scan_finding_whitelisted_from_dashboard_rule(self):
         connection = FakeConnection(result_rows=[{"id": 1}])
         finding = {
@@ -276,12 +304,72 @@ class RdsWriterTests(unittest.TestCase):
 
         writer.write(finding)
 
-        history_sql, history_params = connection.cursor_obj.executions[2]
-        current_sql, current_params = connection.cursor_obj.executions[3]
+        history_sql, history_params = execution_containing(connection, "INSERT INTO asm_findings")
+        current_sql, current_params = execution_containing(connection, "INSERT INTO asm_current_findings")
         self.assertIn("INSERT INTO asm_findings", history_sql)
         self.assertIn("INSERT INTO asm_current_findings", current_sql)
         self.assertTrue(history_params["whitelisted"])
         self.assertTrue(current_params["whitelisted"])
+
+    def test_writer_marks_future_scan_finding_whitelisted_from_finding_rule(self):
+        connection = FakeConnection(fetchone_rows=[None, {"id": 7}])
+        finding = {
+            "endpoint_id": "endpoint-1",
+            "endpoint_name": "https://app.example.com:443",
+            "host": "app.example.com",
+            "port": 443,
+            "cloudAccountName": "Account One",
+            "check_id": "llm_sensitive_content",
+            "risk_level": "high",
+            "details": {"status": 200},
+        }
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-09-02T09:00:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions=set(),
+        )
+
+        writer.write(finding)
+
+        finding_rule_sql, finding_rule_params = execution_containing(connection, "FROM asm_finding_whitelist_rules")
+        history_sql, history_params = execution_containing(connection, "INSERT INTO asm_findings")
+        current_sql, current_params = execution_containing(connection, "INSERT INTO asm_current_findings")
+        self.assertEqual(
+            finding_rule_params,
+            {"finding_key": "b3926d5be171d88300a90e163ae33299566eb55df61039e1cacdadf1c89c74e6"},
+        )
+        self.assertIn("active = TRUE", finding_rule_sql)
+        self.assertTrue(history_params["whitelisted"])
+        self.assertTrue(current_params["whitelisted"])
+
+    def test_writer_does_not_whitelist_different_finding_in_same_account(self):
+        connection = FakeConnection(fetchone_rows=[None, None])
+        finding = {
+            "endpoint_id": "endpoint-2",
+            "endpoint_name": "https://other.example.com:443",
+            "host": "other.example.com",
+            "port": 443,
+            "cloudAccountName": "Account One",
+            "check_id": "llm_sensitive_content",
+            "risk_level": "high",
+            "details": {"status": 200},
+        }
+        writer = rds_writer.RdsFindingWriter(
+            connection,
+            scan_id="scan-1",
+            started_at="2026-09-02T09:00:00+08:00",
+            source_file="scan.jsonl",
+            low_risk_subscriptions=set(),
+        )
+
+        writer.write(finding)
+
+        history_sql, history_params = execution_containing(connection, "INSERT INTO asm_findings")
+        current_sql, current_params = execution_containing(connection, "INSERT INTO asm_current_findings")
+        self.assertFalse(history_params["whitelisted"])
+        self.assertFalse(current_params["whitelisted"])
 
     def test_writer_upserts_current_finding_after_history_insert(self):
         connection = FakeConnection()
@@ -313,7 +401,7 @@ class RdsWriterTests(unittest.TestCase):
         )
         writer.write(finding)
 
-        current_sql, current_params = connection.cursor_obj.executions[3]
+        current_sql, current_params = execution_containing(connection, "INSERT INTO asm_current_findings")
         self.assertIn("INSERT INTO asm_current_findings", current_sql)
         self.assertIn("ON CONFLICT (finding_key) DO UPDATE", current_sql)
         self.assertIn("seen_count = asm_current_findings.seen_count + 1", current_sql)
@@ -413,7 +501,7 @@ class RdsWriterTests(unittest.TestCase):
         self.assertNotIn(webhook, out)
 
     def test_writer_skips_current_upsert_when_history_insert_conflicts(self):
-        connection = FakeConnection(rowcounts=[1, 0])
+        connection = FakeConnection(rowcounts=[1, 1, 0])
         finding = {
             "endpoint_id": "endpoint-1",
             "host": "app.example.com",
@@ -431,10 +519,9 @@ class RdsWriterTests(unittest.TestCase):
         )
         writer.write(finding)
 
-        executed_sql = [sql for sql, _params in connection.cursor_obj.executions]
-        self.assertEqual(len(executed_sql), 2)
-        self.assertIn("INSERT INTO asm_findings", executed_sql[1])
-        self.assertNotIn("asm_current_findings", "\n".join(executed_sql))
+        executed_sql = "\n".join(sql for sql, _params in connection.cursor_obj.executions)
+        self.assertIn("INSERT INTO asm_findings", executed_sql)
+        self.assertNotIn("INSERT INTO asm_current_findings", executed_sql)
 
     def test_finalize_marks_findings_missing_from_current_scan_as_resolved(self):
         connection = FakeConnection()

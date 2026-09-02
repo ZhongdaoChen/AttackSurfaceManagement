@@ -100,6 +100,23 @@ def dashboard_whitelisted(cursor, endpoint_name: Any, port: Any) -> bool:
     return cursor.fetchone() is not None
 
 
+def dashboard_finding_whitelisted(cursor, finding_key_value: Any) -> bool:
+    key = str(finding_key_value or "").strip()
+    if not key:
+        return False
+    cursor.execute(
+        """
+        SELECT id
+        FROM asm_finding_whitelist_rules
+        WHERE active = TRUE
+          AND finding_key = %(finding_key)s
+        LIMIT 1
+        """,
+        {"finding_key": key},
+    )
+    return cursor.fetchone() is not None
+
+
 def strip_nul_bytes(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
@@ -285,6 +302,8 @@ class RdsFindingWriter:
     def write(self, finding: dict[str, Any]) -> None:
         params = finding_insert_params(finding, self.scan_id, self.low_risk_subscriptions)
         if dashboard_whitelisted(self.cursor, params.get("endpoint_name"), params.get("port")):
+            params["whitelisted"] = True
+        elif dashboard_finding_whitelisted(self.cursor, params.get("finding_key")):
             params["whitelisted"] = True
         self.cursor.execute(
             """
