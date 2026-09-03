@@ -434,6 +434,17 @@ def response_content_findings(
     return content_findings_for_response(endpoint, response, context, detail_overrides=detail_overrides)
 
 
+def evidence_with_non_standard_port_context(evidence: str, details: dict[str, Any]) -> str:
+    port = details.get("non_standard_port")
+    if port is None:
+        return evidence
+
+    port_evidence = f"Open non-standard internet-facing port {port}."
+    if port_evidence in evidence:
+        return evidence
+    return f"{evidence} {port_evidence}"
+
+
 def redirected_response_findings(
     endpoint: dict[str, Any],
     response: HttpResponse,
@@ -479,13 +490,13 @@ def content_findings_for_response(
     if signals:
         summary["local_signals"] = signals
         summary["local_risk_floor"] = risk_floor_for_signals(signals)
+    if detail_overrides:
+        summary = {**summary, **detail_overrides}
     endpoint_id = str(endpoint.get("id", ""))
     if endpoint_id:
         context.response_summaries[endpoint_id] = summary
 
     details = summary_without_body(summary)
-    if detail_overrides:
-        details = {**details, **detail_overrides}
 
     # When LLM assessment is enabled we skip local heuristics for 200 responses and
     # defer to the LLM checker to produce a single finding.
@@ -523,7 +534,10 @@ def content_findings_for_response(
                 endpoint,
                 "https_sensitive_content_heuristic",
                 "high",
-                f"HTTPS response contains potentially sensitive signals: {', '.join(signals)}.",
+                evidence_with_non_standard_port_context(
+                    f"HTTPS response contains potentially sensitive signals: {', '.join(signals)}.",
+                    details,
+                ),
                 "Review the exposed content, remove sensitive material, add authentication, or restrict network access.",
                 details={**details, "signals": signals},
             )
@@ -633,22 +647,26 @@ class LlmSensitiveContentChecker:
         result = context.llm_client(prompt)
         llm_risk_level = normalize_risk(result.get("risk_level"))
         risk_level = llm_risk_level
+        details = {
+            **summary_without_body(summary),
+            "reason": result.get("reason"),
+            "category": result.get("category"),
+            "confidence": normalize_confidence(result.get("confidence")),
+            "llm_risk_level": result.get("risk_level"),
+            "why_not_higher": result.get("why_not_higher"),
+            "why_not_lower": result.get("why_not_lower"),
+        }
+        evidence = str(result.get("evidence") or result.get("reason") or "LLM assessment completed.")
+        if risk_level == "high":
+            evidence = evidence_with_non_standard_port_context(evidence, details)
         return [
             finding(
                 endpoint,
                 self.check_id,
                 risk_level,
-                str(result.get("evidence") or result.get("reason") or "LLM assessment completed."),
+                evidence,
                 str(result.get("recommendation") or "Review the endpoint based on the LLM assessment."),
-                details={
-                    **summary_without_body(summary),
-                    "reason": result.get("reason"),
-                    "category": result.get("category"),
-                    "confidence": normalize_confidence(result.get("confidence")),
-                    "llm_risk_level": result.get("risk_level"),
-                    "why_not_higher": result.get("why_not_higher"),
-                    "why_not_lower": result.get("why_not_lower"),
-                },
+                details=details,
             )
         ]
 

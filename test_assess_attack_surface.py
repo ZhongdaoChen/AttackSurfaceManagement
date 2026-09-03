@@ -338,6 +338,8 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual(findings[0]["details"]["probe_scheme"], "https")
         self.assertEqual(findings[0]["details"]["http_probe_result"], "https returned HTTP 200")
         self.assertIn("directory_listing", findings[0]["details"]["signals"])
+        self.assertTrue(findings[0]["evidence"].startswith("HTTPS response contains potentially sensitive signals"))
+        self.assertIn("Open non-standard internet-facing port 9200.", findings[0]["evidence"])
 
     def test_non_standard_open_port_tries_http_after_https_failure(self):
         endpoint = {
@@ -489,6 +491,55 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertEqual([finding["check_id"] for finding in findings], ["llm_sensitive_content"])
         self.assertEqual(findings[0]["risk_level"], "low")
         self.assertEqual(len(llm_calls), 1)
+
+    def test_non_standard_open_port_llm_high_evidence_prioritizes_sensitive_data_and_lists_port(self):
+        endpoint = {
+            "id": "endpoint-1",
+            "host": "app.example.com",
+            "port": 8080,
+            "protocols": ["HTTP"],
+            "portStatus": "OPEN",
+        }
+
+        def fetcher(request, timeout, context=None):
+            if request.full_url.startswith("https://"):
+                raise asm.urllib.error.URLError("wrong version number")
+            return asm.HttpResponse(
+                url=request.full_url,
+                status=200,
+                headers={"Content-Type": "text/html"},
+                body=b"<html><body>api_key=SECRET123</body></html>",
+            )
+
+        def llm_client(prompt):
+            return {
+                "risk_level": "high",
+                "category": "secret",
+                "confidence": 9,
+                "reason": "API key exposed in HTML.",
+                "evidence": "api_key=SECRET123",
+                "recommendation": "Remove the exposed key and rotate it.",
+            }
+
+        findings = asm.assess_endpoint(
+            endpoint,
+            [asm.NonStandardPortChecker(), asm.LlmSensitiveContentChecker()],
+            asm.CheckContext(fetcher=fetcher, llm_enabled=True, llm_client=llm_client),
+        )
+
+        self.assertEqual([finding["check_id"] for finding in findings], ["llm_sensitive_content"])
+        self.assertEqual(findings[0]["risk_level"], "high")
+        self.assertTrue(findings[0]["evidence"].startswith("api_key=SECRET123"))
+        self.assertIn("Open non-standard internet-facing port 8080.", findings[0]["evidence"])
+        self.assertLess(
+            findings[0]["evidence"].index("api_key=SECRET123"),
+            findings[0]["evidence"].index("Open non-standard internet-facing port 8080."),
+        )
+        self.assertEqual(findings[0]["details"]["non_standard_port"], 8080)
+        self.assertEqual(
+            findings[0]["details"]["http_probe_result"],
+            "https failed: wrong version number; http returned HTTP 200",
+        )
 
     def test_http_80_redirect_to_https_sensitive_content_is_high_risk(self):
         endpoint = {"id": "endpoint-1", "host": "app.example.com", "port": 80, "protocols": ["HTTP"]}

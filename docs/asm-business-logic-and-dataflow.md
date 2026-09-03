@@ -79,6 +79,7 @@ Streamlit Dashboard 以 RDS 为单一事实源，向 AppSec 团队展示当前�
 
 1. 先 HTTPS 后 HTTP 探测（各 5s 超时），任一成功即进入「内容判定」（见 4.4），
    `http_probe_result` 记录如 `https failed: timed out; http returned HTTP 200`。
+   如果内容判定发现敏感数据，输出单条敏感内容 finding，`evidence` 先列敏感数据/信号，再补非标准端口证据。
 2. 两种协议都探测失败 → 兜底 finding：
    - 订阅/账号在 `LOW_RISK_SUBSCRIPTIONS` 例外集 → `low`（记录并持续监控）；
    - 否则 → `high`（要求关端口或 allowlist/VPN/WAF 收敛）。
@@ -122,6 +123,7 @@ LLM prompt 会包含 JavaScript/API 资产摘要、本地 `local_signals` 和 `l
   `confidence(0-10)`、`reason`、`evidence`、`recommendation`、`why_not_higher`、`why_not_lower`。
 - 本地高置信信号会生成 `local_risk_floor`；LLM 返回的风险不能低于该下限，避免默认凭据、secret 等确定性证据被降级。
 - evidence 要求：无敏感内容时给简短中文结论；有敏感内容时只摘敏感片段，不贴全量响应。
+  非标准端口上的敏感内容 high finding 会把敏感片段放在 evidence 前面，并追加非标准端口证据。
 
 ### 4.6 risk_level 语义
 
