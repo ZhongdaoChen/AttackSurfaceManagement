@@ -1690,6 +1690,10 @@ class AssessAttackSurfaceTests(unittest.TestCase):
         self.assertIn('"apiKey" should not be defined', prompt)
         self.assertIn("clientId values are expected to be public", prompt)
         self.assertIn("Only classify authentication material as high risk when an actual credential or bearer secret is exposed", prompt)
+        self.assertIn("Do NOT classify SDK or library code as high risk merely because it accepts credential-like parameters", prompt)
+        self.assertIn("Ce.apiKey, config.token, this.secret, or options.clientSecret", prompt)
+        self.assertIn("Do not infer high risk from production authentication code paths, login pages, internal domains", prompt)
+        self.assertIn("local_signals and sensitive_snippets can be false positives", prompt)
 
     def test_arg_parser_defaults_to_full_scan_operational_settings(self):
         args = asm.build_arg_parser().parse_args([])
