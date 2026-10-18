@@ -324,9 +324,13 @@ def exposure_trend_figure(trend: pd.DataFrame):
         )
     monday_ticks = monday_tick_values(trend["date"])
     if monday_ticks:
-        figure.update_xaxes(tickvals=monday_ticks, tickformat="%Y-%m-%d")
+        # Label ticks as month-day (e.g. "8-17"), dropping the year.
+        figure.update_xaxes(
+            tickvals=monday_ticks,
+            ticktext=[f"{day.month}-{day.day}" for day in monday_ticks],
+        )
     else:
-        figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
+        figure.update_xaxes(dtick="D1", tickformat="%-m-%-d")
     figure.update_yaxes(title_text="Count", rangemode="nonnegative")
     apply_dashboard_chart_style(figure, height=300)
     figure.update_layout(hovermode="x unified")

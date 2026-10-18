@@ -254,9 +254,12 @@ class DashboardAppTests(unittest.TestCase):
 
         figure = app.exposure_trend_figure(trend)
         tickvals = list(figure.layout.xaxis.tickvals)
+        ticktext = list(figure.layout.xaxis.ticktext)
 
         self.assertEqual(len(tickvals), 3)
         self.assertTrue(all(pd.Timestamp(day).weekday() == 0 for day in tickvals))
+        # Labels drop the year and render as month-day (e.g. "8-17").
+        self.assertEqual(ticktext, ["8-17", "8-24", "8-31"])
 
     def test_chart_section_divider_separates_kpis_from_trends(self):
         import asm_dashboard.app as app
