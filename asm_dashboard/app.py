@@ -268,6 +268,37 @@ def apply_dashboard_chart_style(figure: go.Figure, height: int | None = None) ->
     figure.update_yaxes(zeroline=False)
 
 
+def monday_tick_values(dates: pd.Series) -> list[datetime.date]:
+    """Return every Monday within the inclusive range of the given dates.
+
+    Used to thin out the Exposure Trend x-axis so only weekly (Monday) ticks
+    are labeled instead of one dense label per day.
+    """
+    normalized: list[datetime.date] = []
+    for value in dates:
+        if isinstance(value, datetime.datetime):
+            normalized.append(value.date())
+        elif isinstance(value, datetime.date):
+            normalized.append(value)
+        elif isinstance(value, str) and value.strip():
+            try:
+                normalized.append(datetime.date.fromisoformat(value.strip()[:10]))
+            except ValueError:
+                continue
+    if not normalized:
+        return []
+    start = min(normalized)
+    end = max(normalized)
+    # Advance to the first Monday (weekday() == 0) on or after start.
+    start += datetime.timedelta(days=(7 - start.weekday()) % 7)
+    mondays: list[datetime.date] = []
+    current = start
+    while current <= end:
+        mondays.append(current)
+        current += datetime.timedelta(days=7)
+    return mondays
+
+
 def exposure_trend_figure(trend: pd.DataFrame):
     figure = go.Figure()
     for metric in ("High Risk", "Mitigated"):
@@ -291,7 +322,11 @@ def exposure_trend_figure(trend: pd.DataFrame):
                 hovertemplate="%{x}<br>%{fullData.name}: %{y}<br>scan_id: %{customdata[0]}<extra></extra>",
             )
         )
-    figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
+    monday_ticks = monday_tick_values(trend["date"])
+    if monday_ticks:
+        figure.update_xaxes(tickvals=monday_ticks, tickformat="%Y-%m-%d")
+    else:
+        figure.update_xaxes(dtick="D1", tickformat="%Y-%m-%d")
     figure.update_yaxes(title_text="Count", rangemode="nonnegative")
     apply_dashboard_chart_style(figure, height=300)
     figure.update_layout(hovermode="x unified")

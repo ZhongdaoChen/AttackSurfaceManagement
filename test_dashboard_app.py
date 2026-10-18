@@ -227,6 +227,37 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(axes["High Risk"], "y")
         self.assertEqual(figure.layout.yaxis.title.text, "Count")
 
+    def test_monday_tick_values_returns_only_mondays_in_range(self):
+        import datetime
+
+        import asm_dashboard.app as app
+
+        dates = ["2026-08-14", "2026-08-15", "2026-09-01"]
+        mondays = app.monday_tick_values(pd.Series(dates))
+
+        self.assertEqual(
+            mondays,
+            [datetime.date(2026, 8, 17), datetime.date(2026, 8, 24), datetime.date(2026, 8, 31)],
+        )
+        self.assertTrue(all(day.weekday() == 0 for day in mondays))
+
+    def test_exposure_trend_x_axis_ticks_only_mondays(self):
+        import asm_dashboard.app as app
+
+        trend = pd.DataFrame(
+            [
+                {"date": "2026-08-14", "scan_id": "scan-1", "metric": "High Risk", "count": 120},
+                {"date": "2026-08-17", "scan_id": "scan-2", "metric": "High Risk", "count": 110},
+                {"date": "2026-09-01", "scan_id": "scan-3", "metric": "High Risk", "count": 100},
+            ]
+        )
+
+        figure = app.exposure_trend_figure(trend)
+        tickvals = list(figure.layout.xaxis.tickvals)
+
+        self.assertEqual(len(tickvals), 3)
+        self.assertTrue(all(pd.Timestamp(day).weekday() == 0 for day in tickvals))
+
     def test_chart_section_divider_separates_kpis_from_trends(self):
         import asm_dashboard.app as app
 
